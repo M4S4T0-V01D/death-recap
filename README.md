@@ -10,7 +10,30 @@
   with a screenshot, a replay GIF and a share card ready to paste into Discord.
 </p>
 
-<!-- Screenshots and GIFs go here: the side panel, a share card and a replay. -->
+<p align="center">
+  <img src="screenshots/share-card.png" alt="Share card for a death to a Green dragon: screenshot, gp lost, HP and prayer graph, damage by source, findings and items lost">
+  <br><sub>The share card, copied to your clipboard after a death.</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/replay.gif" width="800" alt="Replay GIF of the seconds before the death">
+  <br><sub>The replay GIF: the last seconds before the death, plus the death itself.</sub>
+</p>
+
+<table align="center">
+  <tr>
+    <td align="center"><img src="screenshots/recap-1.png" width="234" alt="Side panel recap with the death screenshot, HP graph and findings"></td>
+    <td align="center"><img src="screenshots/recap-2.png" width="234" alt="Side panel recap with state at death, items lost and the timeline"></td>
+    <td align="center"><img src="screenshots/stats.png" width="234" alt="Stats tab with deaths by attacker and gp lost"></td>
+    <td align="center"><img src="screenshots/settings.png" width="234" alt="Plugin settings"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Recap: graph and findings</sub></td>
+    <td align="center"><sub>Items lost and timeline</sub></td>
+    <td align="center"><sub>Stats</sub></td>
+    <td align="center"><sub>Settings</sub></td>
+  </tr>
+</table>
 
 ---
 
