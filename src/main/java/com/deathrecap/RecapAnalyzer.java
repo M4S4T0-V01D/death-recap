@@ -71,8 +71,11 @@ public final class RecapAnalyzer
 		final List<String> findings = new ArrayList<>();
 		if (killingBlow != null)
 		{
-			findings.add(String.format("Killing blow: %d from %s%s.", killingBlow.getAmount(), killingBlow.getSource(),
-				killingBlow.getDetail() != null ? " (" + killingBlow.getDetail() + ")" : ""));
+			TickSnapshot before = snapshotAt(ticks, killingBlow.getTick() - 1);
+			findings.add(String.format("Killing blow: %d from %s%s%s.%s", killingBlow.getAmount(), label(record, killingBlow.getSource()),
+				killingBlow.getWeapon() != null ? " with " + killingBlow.getWeapon() : "",
+				killingBlow.getDetail() != null ? " (" + killingBlow.getDetail() + ")" : "",
+				before != null && before.getHp() > 0 ? String.format(" You had %d HP.", before.getHp()) : ""));
 		}
 		else
 		{
@@ -82,8 +85,12 @@ public final class RecapAnalyzer
 		if (total > 0)
 		{
 			int firstDamageTick = damage.get(0).getTick();
-			StringBuilder sb = new StringBuilder(String.format("You took %d damage in %s", total,
-				seconds(deathTick - firstDamageTick + 1)));
+			int span = deathTick - firstDamageTick + 1;
+			StringBuilder sb = new StringBuilder(String.format("You took %d damage in %s", total, seconds(span)));
+			if (span >= 3)
+			{
+				sb.append(String.format(Locale.ROOT, " (%.1f per second)", total / (span * TICK_SECONDS)));
+			}
 			if (bySource.size() > 1)
 			{
 				sb.append(": ");
@@ -109,6 +116,7 @@ public final class RecapAnalyzer
 		}
 
 		burst(damage, deathTick, "death").ifPresent(findings::add);
+		playerFindings(record, events, findings);
 		hpFindings(ticks, events, deathTick, findings);
 		prayerFindings(ticks, events, killingBlow, deathTick, findings);
 		suppliesFinding(record.getState(), findings);
@@ -164,8 +172,8 @@ public final class RecapAnalyzer
 		}
 		if (low != null)
 		{
-			findings.add(String.format("The hit that took you low: %d from %s%s.", low.getAmount(), low.getSource(),
-				low.getDetail() != null ? " (" + low.getDetail() + ")" : ""));
+			findings.add(String.format("The hit that took you low: %d from %s%s%s.", low.getAmount(), label(record, low.getSource()),
+				low.getWeapon() != null ? " with " + low.getWeapon() : "", low.getDetail() != null ? " (" + low.getDetail() + ")" : ""));
 			TickSnapshot at = snapshotAt(ticks, low.getTick() - 1);
 			if (at != null && low.getType() == RecapEvent.Type.HIT)
 			{
@@ -184,6 +192,7 @@ public final class RecapAnalyzer
 			findings.add(String.format("Biggest hit: %d from %s.", biggest.getAmount(), biggest.getSource()));
 		}
 		burst(damage, lowTick, "HP dropped low").ifPresent(findings::add);
+		playerFindings(record, events, findings);
 
 		List<RecapEvent> after = events.stream()
 			.filter(e -> e.getTick() >= lowTick && (e.getType() == RecapEvent.Type.EAT || e.getType() == RecapEvent.Type.DRINK))
@@ -238,6 +247,7 @@ public final class RecapAnalyzer
 				biggest.getSource(), seconds(pressTick - biggest.getTick())));
 		}
 		burst(damage, pressTick, "the clip was saved").ifPresent(findings::add);
+		playerFindings(record, events, findings);
 		if (!ticks.isEmpty())
 		{
 			TickSnapshot first = ticks.get(0);
@@ -251,6 +261,92 @@ public final class RecapAnalyzer
 			findings.add(String.format("You ate or drank %d time%s.", eats, eats == 1 ? "" : "s"));
 		}
 		return new Summary(killer, null, total, bySource, biggest, findings);
+	}
+
+	/** "Zezima (level 126)" when the attacker's combat level was recorded, otherwise just the name. */
+	public static String label(DeathRecord record, String name)
+	{
+		Attacker a = record.attacker(name);
+		return a != null && a.getCombatLevel() > 0 ? name + " (level " + a.getCombatLevel() + ")" : name;
+	}
+
+	/** The weapons a player attacker was seen holding, in the order they were first seen. */
+	public static List<String> weapons(DeathRecord record, String name)
+	{
+		return record.getEvents().stream()
+			.sorted(Comparator.comparingInt(RecapEvent::getTick))
+			.filter(e -> name.equals(e.getSource()) && e.getWeapon() != null)
+			.map(RecapEvent::getWeapon)
+			.distinct()
+			.collect(Collectors.toList());
+	}
+
+	/** True when another player dealt damage in this recap. */
+	public static boolean isPvp(DeathRecord record)
+	{
+		return record.getAttackers() != null && record.getAttackers().stream()
+			.anyMatch(a -> a.isPlayer() && record.getEvents().stream().anyMatch(e -> e.isDamage() && a.getName().equals(e.getSource())));
+	}
+
+	/** For each player that attacked: their hits, zeros, biggest hit and the weapons they used. */
+	private static void playerFindings(DeathRecord record, List<RecapEvent> events, List<String> findings)
+	{
+		if (record.getAttackers() == null)
+		{
+			return;
+		}
+		List<Attacker> players = record.getAttackers().stream().filter(Attacker::isPlayer).collect(Collectors.toList());
+		List<String> lines = new ArrayList<>();
+		for (Attacker p : players)
+		{
+			List<RecapEvent> hits = events.stream()
+				.filter(e -> p.getName().equals(e.getSource()) && (e.getType() == RecapEvent.Type.HIT || e.getType() == RecapEvent.Type.BLOCK))
+				.collect(Collectors.toList());
+			if (hits.isEmpty())
+			{
+				continue;
+			}
+			long zeros = hits.stream().filter(e -> e.getAmount() == 0).count();
+			int max = hits.stream().mapToInt(RecapEvent::getAmount).max().orElse(0);
+			List<String> used = weapons(record, p.getName());
+			StringBuilder sb = new StringBuilder(label(record, p.getName()));
+			sb.append(String.format(" hit you %d time%s", hits.size(), hits.size() == 1 ? "" : "s"));
+			if (zeros > 0)
+			{
+				sb.append(String.format(" (%d for 0)", zeros));
+			}
+			sb.append(String.format(", up to %d", max));
+			if (!used.isEmpty())
+			{
+				sb.append(", using ").append(joinAnd(used));
+			}
+			lines.add(sb.append('.').toString());
+		}
+		if (lines.size() > 1)
+		{
+			findings.add(String.format("%d players attacked you.", lines.size()));
+		}
+		findings.addAll(lines);
+	}
+
+	static String joinAnd(List<String> parts)
+	{
+		if (parts.size() <= 1)
+		{
+			return String.join("", parts);
+		}
+		return String.join(", ", parts.subList(0, parts.size() - 1)) + " and " + parts.get(parts.size() - 1);
+	}
+
+	/** HP regained between snapshots: food, potions, heals and regeneration. */
+	static int healed(List<TickSnapshot> ticks)
+	{
+		int healed = 0;
+		for (int i = 1; i < ticks.size(); i++)
+		{
+			healed += Math.max(0, ticks.get(i).getHp() - ticks.get(i - 1).getHp());
+		}
+		return healed;
 	}
 
 	/** What food and potions were still in the inventory at death; skipped for recaps from before this was recorded. */
@@ -373,19 +469,26 @@ public final class RecapAnalyzer
 			findings.add(String.format("HP went from %d to 0 in %s.", peak, seconds(deathTick - peakTick)));
 		}
 
-		int lowSince = sinceBelow(ticks, maxHp * 0.25);
-		if (lowSince >= 0 && deathTick - lowSince >= 2)
-		{
-			findings.add(String.format("You were at or below 25%% HP for the last %s.", seconds(deathTick - lowSince)));
-		}
-
 		List<RecapEvent> consumed = events.stream()
 			.filter(e -> e.getType() == RecapEvent.Type.EAT || e.getType() == RecapEvent.Type.DRINK)
 			.collect(Collectors.toList());
+		int lowSince = sinceBelow(ticks, maxHp * 0.25);
 		int halfSince = sinceBelow(ticks, maxHp * 0.5);
-		if (halfSince >= 0 && deathTick - halfSince >= 2 && consumed.stream().noneMatch(e -> e.getTick() >= halfSince))
+		boolean noFood = halfSince >= 0 && deathTick - halfSince >= 2 && consumed.stream().noneMatch(e -> e.getTick() >= halfSince);
+		// When HP was already under a quarter for as long as it was under half, one line says both.
+		boolean sameSpan = noFood && lowSince == halfSince;
+		if (lowSince >= 0 && deathTick - lowSince >= 2)
 		{
-			findings.add(String.format("You were below 50%% HP for the last %s and didn't eat or drink.", seconds(deathTick - halfSince)));
+			findings.add(String.format("You were at or below 25%% HP for the last %s%s.", seconds(deathTick - lowSince),
+				sameSpan ? " and didn't eat or drink" : ""));
+		}
+
+		if (noFood)
+		{
+			if (!sameSpan)
+			{
+				findings.add(String.format("You were below 50%% HP for the last %s and didn't eat or drink.", seconds(deathTick - halfSince)));
+			}
 		}
 		else if (consumed.isEmpty())
 		{
@@ -394,8 +497,10 @@ public final class RecapAnalyzer
 		else
 		{
 			RecapEvent last = consumed.get(consumed.size() - 1);
-			findings.add(String.format("You ate or drank %d time%s; the last was %s, %s before death.", consumed.size(),
-				consumed.size() == 1 ? "" : "s", last.getSource(), seconds(deathTick - last.getTick())));
+			int healed = healed(ticks.stream().filter(t -> t.getTick() <= deathTick).collect(Collectors.toList()));
+			findings.add(String.format("You ate or drank %d time%s%s; the last was %s, %s before death.", consumed.size(),
+				consumed.size() == 1 ? "" : "s", healed > 0 ? " and healed " + healed + " HP" : "",
+				last.getSource(), seconds(deathTick - last.getTick())));
 		}
 	}
 

@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
@@ -59,7 +60,56 @@ final class RecapText
 
 	static String location(DeathRecord r)
 	{
-		return String.format("World %d, region %d (%d, %d, %d)", r.getWorld(), r.getRegionId(), r.getX(), r.getY(), r.getPlane());
+		int wild = wildernessLevel(r);
+		return String.format("World %d, %s (%d, %d, %d)", r.getWorld(),
+			wild > 0 ? "Wilderness level " + wild : "region " + r.getRegionId(), r.getX(), r.getY(), r.getPlane());
+	}
+
+	/** "World 330" or "World 330 · Wilderness 23". */
+	static String place(DeathRecord r)
+	{
+		int wild = wildernessLevel(r);
+		return "World " + r.getWorld() + (wild > 0 ? " · Wilderness " + wild : "");
+	}
+
+	/** The Wilderness level at the recap's location, or 0 outside the Wilderness. */
+	static int wildernessLevel(DeathRecord r)
+	{
+		int x = r.getX();
+		int y = r.getY();
+		if (x < 2944 || x > 3391)
+		{
+			return 0;
+		}
+		if (y >= 3523 && y <= 3967)
+		{
+			return (y - 3520) / 8 + 1;
+		}
+		if (y >= 9920 && y <= 10367)
+		{
+			return (y - 9920) / 8 + 1;
+		}
+		return 0;
+	}
+
+	/** "Zezima (level 126) with Armadyl godsword", or just the name when nothing else is known. */
+	static String killer(DeathRecord r, RecapAnalyzer.Summary s)
+	{
+		String weapon = killerWeapon(r, s);
+		return RecapAnalyzer.label(r, s.getKiller()) + (weapon != null ? " with " + weapon : "");
+	}
+
+	/** The weapon the killer dealt the killing blow with, or last held; null for NPCs. */
+	static String killerWeapon(DeathRecord r, RecapAnalyzer.Summary s)
+	{
+		String name = s.getKiller();
+		String weapon = s.getKillingBlow() != null && name.equals(s.getKillingBlow().getSource()) ? s.getKillingBlow().getWeapon() : null;
+		if (weapon == null)
+		{
+			List<String> used = RecapAnalyzer.weapons(r, name);
+			weapon = used.isEmpty() ? null : used.get(used.size() - 1);
+		}
+		return weapon;
 	}
 
 	static String date(long timestamp)
@@ -72,9 +122,9 @@ final class RecapText
 	{
 		if (r.isClip())
 		{
-			return s.getTotalDamage() > 0 ? "clip, fighting " + s.getKiller() : "clip";
+			return s.getTotalDamage() > 0 ? "clip, fighting " + killer(r, s) : "clip";
 		}
-		return (r.isCloseCall() ? "close call against " : "killed by ") + s.getKiller();
+		return (r.isCloseCall() ? "close call against " : "killed by ") + killer(r, s);
 	}
 
 	static String full(DeathRecord r, RecapAnalyzer.Summary s)
@@ -132,7 +182,7 @@ final class RecapText
 	/** "3 x Shark", or just the name for one. */
 	static String stack(DeathState.ItemStack s)
 	{
-		return (s.getQuantity() > 1 ? s.getQuantity() + " x " : "") + s.getName();
+		return (s.getQuantity() > 1 ? String.format(Locale.ROOT, "%,d x ", s.getQuantity()) : "") + s.getName();
 	}
 
 	/** Weapon, specials, prayers and stats at the moment of death, one line each; empty parts are left out. */

@@ -46,9 +46,18 @@ class DeathRecapOverlay extends OverlayPanel
 		}
 
 		panelComponent.getChildren().add(TitleComponent.builder()
-			.text("Killed by " + summary.getKiller())
+			.text("Killed by " + RecapAnalyzer.label(record, summary.getKiller()))
 			.color(new Color(0xFF, 0x60, 0x60))
 			.build());
+		RecapEvent blow = summary.getKillingBlow();
+		if (blow != null && blow.getWeapon() != null)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+				.left("With")
+				.right(blow.getWeapon())
+				.rightColor(Color.WHITE)
+				.build());
+		}
 
 		if (record.getState() != null)
 		{

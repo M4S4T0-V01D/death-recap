@@ -56,6 +56,23 @@ public class FeaturesTest
 	}
 
 	@Test
+	public void mergesUnstackableItems()
+	{
+		DeathState s = new DeathState();
+		s.setSkulled(true);
+		for (int i = 0; i < 5; i++)
+		{
+			s.getInventory().add(item(7, "Jangerberries", 1, 601));
+		}
+		s.getInventory().add(item(5, "Coins", 120_000, 1));
+
+		ItemsOnDeath.Result r = ItemsOnDeath.compute(s);
+		assertEquals(2, r.getAtRisk().size());
+		assertEquals("120,000 x Coins", RecapText.stack(r.getAtRisk().get(0)));
+		assertEquals("5 x Jangerberries", RecapText.stack(r.getAtRisk().get(1)));
+	}
+
+	@Test
 	public void statsByKiller()
 	{
 		List<StatEntry> entries = List.of(

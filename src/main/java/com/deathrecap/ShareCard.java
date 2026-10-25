@@ -9,6 +9,7 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * One image to share a death, in one of several {@link ShareCardLayout layouts}: the screenshot at full
@@ -80,7 +81,7 @@ final class ShareCard
 		int w3 = inner - w1 - w2;
 		int content = Math.max(Math.round(240 * k), Math.max(
 			m.column(0, 0, w1, m::header, m::loss, m::sources),
-			m.column(0, 0, w2, m::findings, m::items)));
+			m.column(0, 0, w2, m::tiles, m::findings, m::items)));
 		int shotHeight = shot != null ? shot.getHeight() : 0;
 		int stripHeight = pad + content + m.creditHeight();
 
@@ -95,7 +96,7 @@ final class ShareCard
 			}
 			int top = shotHeight + pad;
 			p.column(pad, top, w1, p::header, p::loss, p::sources);
-			p.column(pad + w1 + colGap, top, w2, p::findings, p::items);
+			p.column(pad + w1 + colGap, top, w2, p::tiles, p::findings, p::items);
 			p.graph(width - pad - w3, top, w3, content);
 			p.credit(width, out.getHeight());
 		}
@@ -116,7 +117,7 @@ final class ShareCard
 		int inner = panelWidth - pad * 2;
 		int graphHeight = Math.round(190 * k);
 		Block graph = (x, y, w) -> m.graph(x, y, w, graphHeight);
-		int content = m.column(0, 0, inner, m::header, m::loss, graph, m::sources, m::findings, m::items);
+		int content = m.column(0, 0, inner, m::header, m::loss, m::tiles, graph, m::sources, m::findings, m::items);
 		int width = shot.getWidth() + panelWidth;
 		int height = Math.max(shot.getHeight(), pad + content + m.creditHeight());
 
@@ -127,7 +128,7 @@ final class ShareCard
 			p.fill(BACKGROUND, 0, 0, width, height);
 			p.fill(PANEL, shot.getWidth(), 0, panelWidth, height);
 			p.g.drawImage(shot, 0, (height - shot.getHeight()) / 2, null);
-			p.column(shot.getWidth() + pad, pad, inner, p::header, p::loss, (x, y, w) -> p.graph(x, y, w, graphHeight),
+			p.column(shot.getWidth() + pad, pad, inner, p::header, p::loss, p::tiles, (x, y, w) -> p.graph(x, y, w, graphHeight),
 				p::sources, p::findings, p::items);
 			p.credit(width, height);
 		}
@@ -148,7 +149,7 @@ final class ShareCard
 		int inner = width - pad * 2;
 		int colWidth = (inner - pad * 2) / 2;
 		int graphHeight = Math.round(230 * k);
-		int header = m.column(0, 0, inner, m::header, m::loss);
+		int header = m.column(0, 0, inner, m::header, m::loss, m::tiles);
 		int columns = Math.max(m.column(0, 0, colWidth, m::sources, m::items), m.column(0, 0, colWidth, m::findings));
 		int shotHeight = shot != null ? shot.getHeight() : 0;
 		int height = shotHeight + pad + header + m.gap + graphHeight + (columns > 0 ? m.gap + columns : 0) + m.creditHeight();
@@ -163,7 +164,7 @@ final class ShareCard
 				p.g.drawImage(shot, (width - shot.getWidth()) / 2, 0, null);
 			}
 			int y = shotHeight + pad;
-			p.column(pad, y, inner, p::header, p::loss);
+			p.column(pad, y, inner, p::header, p::loss, p::tiles);
 			y += header + p.gap;
 			p.graph(pad, y, inner, graphHeight);
 			y += graphHeight + p.gap;
@@ -238,14 +239,114 @@ final class ShareCard
 			return h;
 		}
 
+		/** Who did it in large type, then their level and weapon, the killing blow, and when and where. */
 		int header(int x, int y, int w)
 		{
 			Color colour = record.isCloseCall() ? HpGraph.FOOD : record.isClip() ? HpGraph.PRAYER : HpGraph.HIT;
-			String head = RecapText.headline(record, summary);
-			int h = lines(Character.toUpperCase(head.charAt(0)) + head.substring(1), title, colour, x, y, w);
-			h += lines(headline(record, summary), body, TEXT, x, y + h, w);
-			h += put(RecapText.date(record.getTimestamp()) + " · World " + record.getWorld(), body, MUTED, x, y + h, w);
+			String name = summary.getKiller();
+			boolean fought = summary.getTotalDamage() > 0 && name != null;
+			String head = record.isClip() ? (fought ? "Clip, fighting " + name : "Clip")
+				: (record.isCloseCall() ? "Close call against " : "Killed by ") + name;
+			int h = lines(head, title, colour, x, y, w);
+			String who = fought ? who(name) : "";
+			if (!who.isEmpty())
+			{
+				h += lines(who, heading, TEXT, x, y + h, w);
+			}
+			String line = headline(record, summary);
+			if (!line.isEmpty())
+			{
+				h += lines(line, body, Color.LIGHT_GRAY, x, y + h, w);
+			}
+			h += put(RecapText.date(record.getTimestamp()) + " · " + RecapText.place(record), body, MUTED, x, y + h, w);
 			return h;
+		}
+
+		/** "Level 126 player · Armadyl godsword", or just the level for NPCs; empty when nothing is known. */
+		private String who(String name)
+		{
+			Attacker a = record.attacker(name);
+			List<String> parts = new ArrayList<>();
+			if (a != null && a.getCombatLevel() > 0)
+			{
+				parts.add("Level " + a.getCombatLevel() + (a.isPlayer() ? " player" : ""));
+			}
+			else if (a != null && a.isPlayer())
+			{
+				parts.add("Player");
+			}
+			String weapon = RecapText.killerWeapon(record, summary);
+			if (weapon != null)
+			{
+				parts.add(weapon);
+			}
+			return String.join(" · ", parts);
+		}
+
+		/** A row of key numbers: damage taken, damage per second, biggest hit and food eaten. */
+		int tiles(int x, int y, int w)
+		{
+			if (summary.getTotalDamage() == 0)
+			{
+				return 0;
+			}
+			List<String[]> list = new ArrayList<>();
+			int deathTick = record.getDeathTick();
+			int first = Integer.MAX_VALUE;
+			int biggest = 0;
+			int eaten = 0;
+			for (RecapEvent e : record.getEvents())
+			{
+				if (e.getTick() > deathTick)
+				{
+					continue;
+				}
+				if (e.isDamage())
+				{
+					first = Math.min(first, e.getTick());
+					biggest = Math.max(biggest, e.getAmount());
+				}
+				else if (e.getType() == RecapEvent.Type.EAT || e.getType() == RecapEvent.Type.DRINK)
+				{
+					eaten++;
+				}
+			}
+			list.add(new String[]{String.valueOf(summary.getTotalDamage()), "damage"});
+			// Counted the same way as the damage finding: every tick from the first hit to the death.
+			int span = deathTick - first + 1;
+			if (first != Integer.MAX_VALUE && span >= 3)
+			{
+				list.add(new String[]{String.format(Locale.ROOT, "%.1f", summary.getTotalDamage() / (span * 0.6)), "dmg / sec"});
+			}
+			list.add(new String[]{String.valueOf(biggest), "max hit"});
+			if (record.isCloseCall())
+			{
+				int lowest = record.getTicks().stream().mapToInt(TickSnapshot::getHp).filter(v -> v > 0).min().orElse(0);
+				list.add(new String[]{String.valueOf(lowest), "lowest HP"});
+			}
+			else
+			{
+				list.add(new String[]{String.valueOf(eaten), "eaten"});
+			}
+
+			FontMetrics fm = g.getFontMetrics(small);
+			int tileGap = Math.round(6 * k);
+			int tw = (w - tileGap * (list.size() - 1)) / list.size();
+			int inner = Math.round(6 * k);
+			int th = inner * 2 + g.getFontMetrics(title).getHeight() + fm.getHeight();
+			for (int i = 0; i < list.size(); i++)
+			{
+				int tx = x + i * (tw + tileGap);
+				if (draw)
+				{
+					g.setColor(PANEL);
+					g.fillRoundRect(tx, y, tw, th, inner, inner);
+				}
+				Color c = i == 0 ? HpGraph.HIT : TEXT;
+				int vh = put(list.get(i)[0], title, c, tx + inner, y + inner, tw - inner * 2);
+				put(list.get(i)[1], small, MUTED, tx + inner, y + inner + vh, tw - inner * 2);
+			}
+			return th;
 		}
 
 		/** The value lost, in large type. */
@@ -412,14 +513,23 @@ final class ShareCard
 		if (record.isCloseCall())
 		{
 			int lowest = record.getTicks().stream().mapToInt(TickSnapshot::getHp).filter(h -> h > 0).min().orElse(0);
-			return "Survived on " + lowest + " HP · " + summary.getTotalDamage() + " damage taken";
-		}
-		if (record.isClip())
-		{
-			return summary.getTotalDamage() + " damage taken";
+			return "Survived on " + lowest + " HP";
 		}
 		RecapEvent blow = summary.getKillingBlow();
-		return (blow != null ? "Killing blow " + blow.getAmount() + " · " : "") + summary.getTotalDamage() + " damage taken";
+		if (record.isClip() || blow == null)
+		{
+			return "";
+		}
+		// HP just before the killing blow shows whether it was one big hit or the last of many.
+		int before = 0;
+		for (TickSnapshot t : record.getTicks())
+		{
+			if (t.getTick() < blow.getTick())
+			{
+				before = t.getHp();
+			}
+		}
+		return "Killing blow: " + blow.getAmount() + " damage" + (before > 0 ? ", you had " + before + " HP" : "");
 	}
 
 	/** The findings worth a place on the card; the killing blow is already in the headline. */

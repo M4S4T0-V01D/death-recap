@@ -39,6 +39,13 @@ public class RecapEvent
 	private String source;
 	/** How the source was attributed, e.g. "projectile" or "melee range". May be null. */
 	private String detail;
+	/** The weapon a player attacker was holding, or null for NPCs and older recaps. */
+	private String weapon;
+
+	public RecapEvent(int tick, Type type, int amount, String source, String detail)
+	{
+		this(tick, type, amount, source, detail, null);
+	}
 
 	public boolean isDamage()
 	{

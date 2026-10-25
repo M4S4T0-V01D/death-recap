@@ -37,8 +37,26 @@ public class DeathRecord
 	private boolean clip;
 	/** Stats, prayers and items at the moment of death; null for older recaps. */
 	private DeathState state;
+	/** Everyone who attacked in this recap, with combat levels; null for older recaps. */
+	private List<Attacker> attackers;
 	private List<TickSnapshot> ticks = new ArrayList<>();
 	private List<RecapEvent> events = new ArrayList<>();
+
+	/** The recorded attacker with this name, or null. */
+	public Attacker attacker(String name)
+	{
+		if (attackers != null && name != null)
+		{
+			for (Attacker a : attackers)
+			{
+				if (name.equals(a.getName()))
+				{
+					return a;
+				}
+			}
+		}
+		return null;
+	}
 
 	/** True for a real death; false for close calls and clips. */
 	public boolean isDeath()

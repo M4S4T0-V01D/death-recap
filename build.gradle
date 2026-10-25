@@ -67,3 +67,11 @@ tasks.register('shadowJar', Jar) {
 	archiveClassifier.set('shadow')
 	archiveFileName.set("${rootProject.name}-${project.version}-all.jar")
 }
+
+test {
+	// Share card previews: ./gradlew test --tests '*CardPreview*' -PcardPreview=<dir>
+	if (project.hasProperty('cardPreview')) {
+		systemProperty 'cardPreview', project.property('cardPreview')
+		outputs.upToDateWhen { false }
+	}
+}

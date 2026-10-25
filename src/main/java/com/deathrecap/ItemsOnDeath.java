@@ -43,7 +43,7 @@ final class ItemsOnDeath
 
 		int keep = keepCount(state.isSkulled(), state.isProtectItem());
 		Map<Integer, DeathState.ItemStack> kept = new LinkedHashMap<>();
-		List<DeathState.ItemStack> atRisk = new ArrayList<>();
+		Map<Integer, DeathState.ItemStack> atRisk = new LinkedHashMap<>();
 		long keptValue = 0;
 		long riskValue = 0;
 		for (DeathState.ItemStack s : all)
@@ -52,26 +52,33 @@ final class ItemsOnDeath
 			keep -= take;
 			if (take > 0)
 			{
-				DeathState.ItemStack k = kept.get(s.getId());
-				if (k != null)
-				{
-					k.setQuantity(k.getQuantity() + take);
-				}
-				else
-				{
-					kept.put(s.getId(), new DeathState.ItemStack(s.getId(), s.getName(), take, s.getPrice()));
-				}
+				merge(kept, s, take);
 				keptValue += take * s.getPrice();
 			}
 			int rest = s.getQuantity() - take;
 			if (rest > 0)
 			{
-				atRisk.add(new DeathState.ItemStack(s.getId(), s.getName(), rest, s.getPrice()));
+				// Unstackable items, like five Jangerberries, are listed once with their total.
+				merge(atRisk, s, rest);
 				riskValue += rest * s.getPrice();
 			}
 		}
-		atRisk.sort(Comparator.comparingLong((DeathState.ItemStack s) -> s.getPrice() * s.getQuantity()).reversed());
-		return new Result(new ArrayList<>(kept.values()), atRisk, keptValue, riskValue);
+		List<DeathState.ItemStack> risk = new ArrayList<>(atRisk.values());
+		risk.sort(Comparator.comparingLong((DeathState.ItemStack s) -> s.getPrice() * s.getQuantity()).reversed());
+		return new Result(new ArrayList<>(kept.values()), risk, keptValue, riskValue);
+	}
+
+	private static void merge(Map<Integer, DeathState.ItemStack> into, DeathState.ItemStack s, int quantity)
+	{
+		DeathState.ItemStack k = into.get(s.getId());
+		if (k != null)
+		{
+			k.setQuantity(k.getQuantity() + quantity);
+		}
+		else
+		{
+			into.put(s.getId(), new DeathState.ItemStack(s.getId(), s.getName(), quantity, s.getPrice()));
+		}
 	}
 
 	/** 1234 -> "1,234", 1_234_567 -> "1.23M", 12_345_678_901 -> "12.3B". */

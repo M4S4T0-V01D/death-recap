@@ -19,6 +19,7 @@ import java.awt.datatransfer.Transferable;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -146,20 +147,29 @@ class DeathRecapPanel extends PluginPanel
 			BorderFactory.createMatteBorder(0, 0, 6, 0, ColorScheme.DARK_GRAY_COLOR),
 			new EmptyBorder(6, 8, 6, 8)));
 
-		JPanel head = new JPanel(new GridLayout(2, 1));
+		JPanel head = new JPanel(new GridLayout(0, 1));
 		head.setOpaque(false);
 		String blow = summary.getKillingBlow() != null ? " (" + summary.getKillingBlow().getAmount() + ")" : "";
+		String name = RecapAnalyzer.label(record, summary.getKiller());
 		JLabel killer = new JLabel(record.isCloseCall()
-			? "Close call: " + summary.getKiller() + " · HP fell to " + StatEntry.of(record, summary).getLowestHp()
-			: record.isClip() ? "Clip" + (summary.getTotalDamage() > 0 ? ": " + summary.getKiller() : "")
-			: summary.getKiller() + blow);
+			? "Close call: " + name + " · HP fell to " + StatEntry.of(record, summary).getLowestHp()
+			: record.isClip() ? "Clip" + (summary.getTotalDamage() > 0 ? ": " + name : "")
+			: name + blow);
 		killer.setForeground(record.isCloseCall() ? CONSUME : record.isClip() ? PRAYER : DAMAGE);
 		killer.setFont(FontManager.getRunescapeBoldFont());
-		JLabel when = new JLabel(RecapText.date(record.getTimestamp()) + " · World " + record.getWorld()
+		JLabel when = new JLabel(RecapText.date(record.getTimestamp()) + " · " + RecapText.place(record)
 			+ " · " + summary.getTotalDamage() + " dmg");
 		when.setForeground(MUTED);
 		when.setFont(FontManager.getRunescapeSmallFont());
 		head.add(killer);
+		List<String> used = summary.getTotalDamage() > 0 ? RecapAnalyzer.weapons(record, summary.getKiller()) : Collections.emptyList();
+		if (!used.isEmpty())
+		{
+			JLabel with = new JLabel("With " + RecapAnalyzer.joinAnd(used));
+			with.setForeground(Color.WHITE);
+			with.setFont(FontManager.getRunescapeSmallFont());
+			head.add(with);
+		}
 		head.add(when);
 		head.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 		head.setToolTipText(RecapText.location(record));

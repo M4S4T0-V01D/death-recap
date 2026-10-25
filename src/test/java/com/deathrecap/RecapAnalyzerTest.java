@@ -91,4 +91,48 @@ public class RecapAnalyzerTest
 		assertTrue(DeathRecapPlugin.isHealthDamage(net.runelite.api.HitsplatID.DAMAGE_ME));
 		assertTrue(!DeathRecapPlugin.isHealthDamage(net.runelite.api.HitsplatID.PRAYER_DRAIN));
 	}
+
+	@Test
+	public void pvpKillerWeaponAndLevel()
+	{
+		DeathRecord r = CardPreviewTest.pvp();
+		RecapAnalyzer.Summary s = RecapAnalyzer.analyze(r);
+
+		assertEquals("Zezima", s.getKiller());
+		assertTrue(RecapAnalyzer.isPvp(r));
+		assertEquals("Zezima (level 126) with Armadyl godsword", RecapText.killer(r, s));
+		assertEquals("Armadyl godsword", s.getKillingBlow().getWeapon());
+		List<String> f = s.getFindings();
+		assertTrue(has(f, "2 players attacked you."));
+		assertTrue(has(f, "Zezima (level 126) hit you 6 times, up to 22, using Abyssal tentacle, Dragon claws and Armadyl godsword."));
+		assertTrue(has(f, "Pk Lord (level 98) hit you 4 times (1 for 0), up to 13, using Dragon scimitar."));
+		assertEquals(36, RecapAnalyzer.healed(r.getTicks()));
+	}
+
+	@Test
+	public void npcRecapIsNotPvp()
+	{
+		DeathRecord r = CardPreviewTest.boss();
+		RecapAnalyzer.Summary s = RecapAnalyzer.analyze(r);
+		assertTrue(!RecapAnalyzer.isPvp(r));
+		assertEquals("Vorkath (level 732)", RecapText.killer(r, s));
+	}
+
+	@Test
+	public void wildernessLevels()
+	{
+		DeathRecord r = record(1);
+		r.setX(3100);
+		r.setY(3700);
+		assertEquals(23, RecapText.wildernessLevel(r));
+		r.setY(3525);
+		assertEquals(1, RecapText.wildernessLevel(r));
+		r.setY(9925);
+		assertEquals(1, RecapText.wildernessLevel(r));
+		r.setX(3222);
+		r.setY(3218);
+		assertEquals(0, RecapText.wildernessLevel(r));
+		r.setWorld(330);
+		assertEquals("World 330", RecapText.place(r));
+	}
 }

@@ -35,8 +35,8 @@ final class HpGraph
 	private static final Color GRID = new Color(0xFF, 0xFF, 0xFF, 0x14);
 	private static final Color LABEL = new Color(0xA0, 0xA0, 0xA0);
 	private static final Color DANGER = new Color(0xFF, 0x30, 0x30, 0x22);
-	/** The tallest hit bar, as a share of the plot's height. */
-	private static final double HIT_BAR_SHARE = 0.4;
+	/** The biggest hit's bar, as a share of the plot's height. */
+	private static final double HIT_BAR_SHARE = 0.22;
 	/** HP at or below this share of the maximum is shaded as dangerous. */
 	private static final double DANGER_SHARE = 0.2;
 	private static final double TICK_SECONDS = 0.6;
@@ -89,6 +89,14 @@ final class HpGraph
 			maxHp = Math.max(maxHp, Math.max(t.getMaxHp(), t.getHp()));
 			maxPrayer = Math.max(maxPrayer, t.getPrayer());
 		}
+		int maxHit = 1;
+		for (RecapEvent e : record.getEvents())
+		{
+			if (e.isDamage())
+			{
+				maxHit = Math.max(maxHit, e.getAmount());
+			}
+		}
 		int deathTick = record.getDeathTick();
 		boolean labels = plot.y > area.y + fm.getHeight();
 
@@ -139,12 +147,25 @@ final class HpGraph
 		fill.closePath();
 		g2.setPaint(new GradientPaint(0, plot.y, alpha(HP, 0x70), 0, plot.y + plot.height, alpha(HP, 0x10)));
 		g2.fill(fill);
-		g2.setStroke(new BasicStroke(1.25f * scale, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-		g2.setColor(alpha(PRAYER, 0xD0));
+		g2.setStroke(new BasicStroke(1f * scale, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		g2.setColor(alpha(PRAYER, 0x90));
 		g2.draw(line(ticks, range, plot, maxPrayer, true));
 		g2.setStroke(new BasicStroke(2f * scale, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 		g2.setColor(HP);
 		g2.draw(hp);
+		// Each drop in HP drawn in red and each rise in yellow, so damage and healing stand out on the line.
+		g2.setStroke(new BasicStroke(2.5f * scale, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		for (int i = 1; i < ticks.size(); i++)
+		{
+			int before = ticks.get(i - 1).getHp();
+			int after = ticks.get(i).getHp();
+			if (before != after)
+			{
+				double sx = x(ticks.get(i).getTick(), range, plot);
+				g2.setColor(after < before ? HIT : FOOD);
+				g2.draw(new Line2D.Double(sx, y(before, maxHp, plot), sx, y(after, maxHp, plot)));
+			}
+		}
 
 		// Hits, stacked when several land on one tick, numbered when there's room.
 		List<RecapEvent> events = new ArrayList<>(record.getEvents());
@@ -160,12 +181,12 @@ final class HpGraph
 				continue;
 			}
 			double ex = x(e.getTick(), range, plot);
-			double h = Math.max(2, Math.min(1.0, (double) e.getAmount() / maxHp) * plot.height * HIT_BAR_SHARE);
+			double h = Math.max(2, (double) e.getAmount() / maxHit * plot.height * HIT_BAR_SHARE);
 			double base = stacked.getOrDefault(e.getTick(), 0.0);
 			stacked.put(e.getTick(), base + h + 1);
 			double top = plot.y + plot.height - base - h;
 			Color c = e.getType() == RecapEvent.Type.HIT ? HIT : DeathRecapPanel.DOT;
-			g2.setColor(e == blow ? c.brighter() : c);
+			g2.setColor(e == blow ? c.brighter() : alpha(c, 0xB0));
 			g2.fill(new RoundRectangle2D.Double(ex - barWidth / 2, top, barWidth, h, barWidth / 2, barWidth / 2));
 			if (e == blow)
 			{
@@ -175,7 +196,8 @@ final class HpGraph
 			}
 			String n = String.valueOf(e.getAmount());
 			int nw = fm.stringWidth(n);
-			double lx = ex - nw / 2.0;
+			// Kept inside the plot, so the killing blow at the right edge isn't cut off.
+			double lx = Math.min(ex - nw / 2.0, plot.x + plot.width - nw - 2 * scale);
 			double ly = top - 2 * scale;
 			if (labels && lx > labelRight + 2 * scale && ly - fm.getAscent() > plot.y)
 			{

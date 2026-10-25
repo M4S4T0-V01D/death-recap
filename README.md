@@ -21,19 +21,20 @@ You're fighting a boss, the screen fills with hitsplats, and you're suddenly at 
 ## Features
 
 ### The recap
-- **Killer and killing blow**: the last hit, who dealt it, and how that was worked out (projectile, attack animation or likely target).
+- **Killer and killing blow**: the last hit, who dealt it, how much HP you had left, and how that was worked out (projectile, attack animation or likely target).
+- **PvP**: killed by a player? You see their name, combat level and the weapon that finished you, plus every weapon each attacker used, how often they hit you and their biggest hit. Deaths in the Wilderness show the Wilderness level.
 - **Damage breakdown**: total damage taken, split by attacker, including poison, venom, burn and other damage over time.
 - **Findings in plain language**: biggest hit, biggest single-tick burst, how fast your HP dropped, how long you sat at low HP, when you last ate or drank, which protection prayer was up for the killing blow, and when your prayer ran out.
 - **Food left at death**: whether you died with food or potions still in your inventory, and which ones.
 - **Timeline**: every hit, heal, attack, projectile, food, potion and prayer change, with how long before the death each one happened.
-- **HP and prayer graph**: your HP line with a low-HP band, hits drawn as bars sized by damage (the killing blow outlined), food and potions marked, and a seconds axis. Hover it to see your exact HP and prayer at any moment.
+- **HP and prayer graph**: your HP line with every drop in red and every heal in yellow, a low-HP band, hits drawn as numbered bars sized by damage (the killing blow outlined), food and potions marked, and a seconds axis. Hover it to see your exact HP and prayer at any moment.
 - **State at death**: boosted and real stats, special attack and run energy, active prayers, weapon and attack style, skull and Protect Item.
 - **Money and items lost**: an estimate of what you lost and what you kept, at Grand Exchange prices.
 
 ### Screenshot, replay and sharing
 - **Death screenshot** taken the moment you die.
 - **Replay GIF** of the seconds before the death and the death animation, at the game's full size so hitsplats and chat stay readable. The replay player shows the recap's timeline beside the video: click any event to jump to it, Space to play and pause, arrow keys to step frame by frame.
-- **Share card**: one image with the screenshot, killer, gp lost, damage by source, the HP graph, key findings and items lost. It's copied to your clipboard, ready to paste. Pick a layout each time or set a default:
+- **Share card**: one image with the screenshot, killer (with level and weapon in PvP), gp lost, key numbers (damage, damage per second, max hit, food eaten), damage by source, the HP graph, findings and items lost. It's copied to your clipboard, ready to paste. Pick a layout each time or set a default:
 
   | Layout | What you get |
   | --- | --- |
@@ -54,7 +55,7 @@ You're fighting a boss, the screen fills with hitsplats, and you're suddenly at 
 ## Where it shows up
 
 - A short **on-screen summary** right after you die.
-- A one-line **chat message**: `Death Recap: killed by Vorkath (32). 87 damage taken. Lost about 1.2M gp (Abyssal whip, ...).`
+- A one-line **chat message**: `Death Recap: killed by Zezima (level 126) with Armadyl godsword (22). 135 damage taken. Lost about 1.7M gp (Abyssal whip, ...).`
 - The **Death Recap side panel**, which keeps your recent recaps per account. Each one has Copy (as text), Share card and Delete buttons.
 
 Each of these can be turned off.

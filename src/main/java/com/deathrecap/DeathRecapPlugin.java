@@ -40,11 +40,13 @@ import net.runelite.api.ParamID;
 import net.runelite.api.GameState;
 import net.runelite.api.HitsplatID;
 import net.runelite.api.Player;
+import net.runelite.api.PlayerComposition;
 import net.runelite.api.Prayer;
 import net.runelite.api.Projectile;
 import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ActorDeath;
+import net.runelite.api.kit.KitType;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
@@ -151,6 +153,10 @@ public class DeathRecapPlugin extends Plugin
 	private final Map<Actor, Integer> lastAttackTick = new WeakHashMap<>();
 	private final Set<Projectile> seenProjectiles = Collections.newSetFromMap(new WeakHashMap<>());
 	private final List<IncomingProjectile> incoming = new ArrayList<>();
+	/** Everyone seen attacking the player, by name, with their latest combat level. */
+	private final Map<String, Attacker> attackers = new LinkedHashMap<>();
+	/** A death waiting for the next game tick to be finished. */
+	private DeathRecord pendingDeath;
 	private String lastProtection;
 	private int lastPrayer = -1;
 	private int lastDeathTick = -1;
@@ -178,11 +184,13 @@ public class DeathRecapPlugin extends Plugin
 	private static final class IncomingProjectile
 	{
 		final String source;
+		final String weapon;
 		final int endCycle;
 
-		IncomingProjectile(String source, int endCycle)
+		IncomingProjectile(String source, String weapon, int endCycle)
 		{
 			this.source = source;
+			this.weapon = weapon;
 			this.endCycle = endCycle;
 		}
 	}
@@ -269,6 +277,12 @@ public class DeathRecapPlugin extends Plugin
 		{
 			return;
 		}
+		DeathRecord death = pendingDeath;
+		if (death != null)
+		{
+			pendingDeath = null;
+			finishDeath(death);
+		}
 		int tick = client.getTickCount();
 		int prayer = client.getBoostedSkillLevel(Skill.PRAYER);
 		String protection = activeProtection();
@@ -352,6 +366,7 @@ public class DeathRecapPlugin extends Plugin
 		int from = record.getDeathTick() - windowTicks();
 		ticks.stream().filter(t -> t.getTick() >= from).forEach(record.getTicks()::add);
 		events.stream().filter(e -> e.getTick() >= from).forEach(record.getEvents()::add);
+		record.setAttackers(attackersIn(record));
 		RecapAnalyzer.Summary summary = RecapAnalyzer.analyze(record);
 		record.setKiller(summary.getKiller());
 		StatEntry entry = StatEntry.of(record, summary);
@@ -428,7 +443,7 @@ public class DeathRecapPlugin extends Plugin
 		{
 			lastHitTick = tick;
 		}
-		events.add(new RecapEvent(tick, kind, amount, source[0], source[1]));
+		events.add(new RecapEvent(tick, kind, amount, source[0], source[1], source[2]));
 	}
 
 	@Subscribe
@@ -442,9 +457,10 @@ public class DeathRecapPlugin extends Plugin
 		}
 		int tick = client.getTickCount();
 		Integer previous = lastAttackTick.put(actor, tick);
+		noteAttacker(actor);
 		if (config.recordAttacks() && (previous == null || previous != tick))
 		{
-			events.add(new RecapEvent(tick, RecapEvent.Type.ATTACK, 0, name(actor), null));
+			events.add(new RecapEvent(tick, RecapEvent.Type.ATTACK, 0, name(actor), null, weaponOf(actor)));
 		}
 	}
 
@@ -457,11 +473,14 @@ public class DeathRecapPlugin extends Plugin
 		{
 			return;
 		}
-		String source = projectile.getSourceActor() != null ? name(projectile.getSourceActor()) : "Unknown";
-		incoming.add(new IncomingProjectile(source, projectile.getEndCycle()));
+		Actor from = projectile.getSourceActor();
+		String source = from != null ? name(from) : "Unknown";
+		String weapon = weaponOf(from);
+		noteAttacker(from);
+		incoming.add(new IncomingProjectile(source, weapon, projectile.getEndCycle()));
 		if (config.recordAttacks())
 		{
-			events.add(new RecapEvent(client.getTickCount(), RecapEvent.Type.PROJECTILE, 0, source, null));
+			events.add(new RecapEvent(client.getTickCount(), RecapEvent.Type.PROJECTILE, 0, source, null, weapon));
 		}
 	}
 
@@ -499,8 +518,16 @@ public class DeathRecapPlugin extends Plugin
 		discardCloseCall();
 		closeCallArmed = true;
 
+		// The killing hitsplat can arrive after this event in the same tick, so the recap is finished on
+		// the next game tick, once everything from this one has been recorded.
 		DeathRecord record = newRecord(tick);
 		record.setState(captureState(true));
+		pendingDeath = record;
+	}
+
+	private void finishDeath(DeathRecord record)
+	{
+		int tick = record.getDeathTick();
 		// The buffers run longer than the recap window while a close call is pending.
 		int from = tick - windowTicks();
 		ticks.stream().filter(t -> t.getTick() >= from).forEach(record.getTicks()::add);
@@ -511,6 +538,7 @@ public class DeathRecapPlugin extends Plugin
 				client.getBoostedSkillLevel(Skill.PRAYER), activeProtection()));
 		}
 		events.stream().filter(e -> e.getTick() >= from).forEach(record.getEvents()::add);
+		record.setAttackers(attackersIn(record));
 
 		RecapAnalyzer.Summary summary = RecapAnalyzer.analyze(record);
 		record.setKiller(summary.getKiller());
@@ -543,7 +571,7 @@ public class DeathRecapPlugin extends Plugin
 			String blow = summary.getKillingBlow() != null ? " (" + summary.getKillingBlow().getAmount() + ")" : "";
 			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", String.format(
 				"<col=ff4040>Death Recap:</col> killed by %s%s. %d damage taken.%s Open the Death Recap panel for details.",
-				summary.getKiller(), blow, summary.getTotalDamage(), RecapText.lostSentence(record)), null);
+				RecapText.killer(record, summary), blow, summary.getTotalDamage(), RecapText.lostSentence(record)), null);
 		}
 	}
 
@@ -569,6 +597,7 @@ public class DeathRecapPlugin extends Plugin
 		int from = tick - windowTicks();
 		ticks.stream().filter(t -> t.getTick() >= from).forEach(record.getTicks()::add);
 		events.stream().filter(e -> e.getTick() >= from).forEach(record.getEvents()::add);
+		record.setAttackers(attackersIn(record));
 		RecapAnalyzer.Summary summary = RecapAnalyzer.analyze(record);
 		record.setKiller(summary.getKiller());
 
@@ -1091,7 +1120,7 @@ public class DeathRecapPlugin extends Plugin
 		if (best != null)
 		{
 			incoming.remove(best);
-			return new String[]{best.source, "projectile"};
+			return new String[]{best.source, "projectile", best.weapon};
 		}
 
 		Actor attacker = null;
@@ -1106,16 +1135,62 @@ public class DeathRecapPlugin extends Plugin
 		}
 		if (attacker != null)
 		{
-			return new String[]{name(attacker), null};
+			return new String[]{name(attacker), null, weaponOf(attacker)};
 		}
 
 		Player local = client.getLocalPlayer();
 		Actor target = local != null ? local.getInteracting() : null;
 		if (target != null && target.getInteracting() == local)
 		{
-			return new String[]{name(target), "likely"};
+			noteAttacker(target);
+			return new String[]{name(target), "likely", weaponOf(target)};
 		}
-		return new String[]{"Unknown", null};
+		return new String[]{"Unknown", null, null};
+	}
+
+	private void noteAttacker(Actor actor)
+	{
+		if (actor == null)
+		{
+			return;
+		}
+		if (attackers.size() > 100)
+		{
+			attackers.clear();
+		}
+		String name = name(actor);
+		attackers.remove(name);
+		attackers.put(name, new Attacker(name, actor.getCombatLevel(), actor instanceof Player));
+	}
+
+	/** The attackers that appear in the record's events. */
+	private List<Attacker> attackersIn(DeathRecord record)
+	{
+		List<Attacker> list = new ArrayList<>();
+		for (Attacker a : attackers.values())
+		{
+			if (record.getEvents().stream().anyMatch(e -> a.getName().equals(e.getSource())))
+			{
+				list.add(new Attacker(a.getName(), a.getCombatLevel(), a.isPlayer()));
+			}
+		}
+		return list;
+	}
+
+	/** The weapon another player is holding, or null for NPCs. Client thread only. */
+	private String weaponOf(Actor actor)
+	{
+		if (!(actor instanceof Player))
+		{
+			return null;
+		}
+		PlayerComposition comp = ((Player) actor).getPlayerComposition();
+		if (comp == null)
+		{
+			return null;
+		}
+		int id = comp.getEquipmentId(KitType.WEAPON);
+		return id > 0 ? itemManager.getItemComposition(id).getName() : "Unarmed";
 	}
 
 	private void trim(int tick)
@@ -1159,6 +1234,8 @@ public class DeathRecapPlugin extends Plugin
 		ticks.clear();
 		incoming.clear();
 		lastAttackTick.clear();
+		attackers.clear();
+		pendingDeath = null;
 		seenProjectiles.clear();
 		lastProtection = null;
 		lastPrayer = -1;
