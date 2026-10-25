@@ -106,7 +106,7 @@ Frames are compressed on one background thread and GIFs are written on another, 
 
 ## Your data
 
-Everything stays on your computer. Recaps are saved as JSON in the plugin's folder inside your RuneLite directory, one file per account, with screenshots and GIFs next to them. Use "Open folder" in the panel to find them. Deleting a recap also deletes its media. Nothing is uploaded anywhere.
+Everything stays on your computer. Recaps are saved as JSON in the plugin's folder inside your RuneLite directory, one file per account, with screenshots and GIFs next to them. Use "Copy folder path" in the panel to find them. Deleting a recap also deletes its media. Nothing is uploaded anywhere.
 
 ## Notes
 

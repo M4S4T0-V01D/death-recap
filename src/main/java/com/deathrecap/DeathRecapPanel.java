@@ -370,7 +370,7 @@ class DeathRecapPanel extends PluginPanel
 				JOptionPane.showMessageDialog(this, "That file is missing.", "Death Recap", JOptionPane.WARNING_MESSAGE);
 				return;
 			}
-			new ReplayPlayer(SwingUtilities.getWindowAncestor(this), title, record, bytes, tick, plugin::openMediaFolder,
+			new ReplayPlayer(SwingUtilities.getWindowAncestor(this), title, record, bytes, tick, plugin::copyMediaFolderPath,
 				plugin.getExecutor())
 				.setVisible(true);
 		});
@@ -389,8 +389,8 @@ class DeathRecapPanel extends PluginPanel
 		dialog.setResizable(true);
 		dialog.add(scroll, BorderLayout.CENTER);
 		JPanel bar = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-		JButton folder = new JButton("Open folder");
-		folder.addActionListener(e -> plugin.openMediaFolder());
+		JButton folder = new JButton("Copy folder path");
+		folder.addActionListener(e -> plugin.copyMediaFolderPath());
 		bar.add(folder);
 		dialog.add(bar, BorderLayout.SOUTH);
 		dialog.pack();

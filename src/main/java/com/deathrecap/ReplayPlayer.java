@@ -63,7 +63,7 @@ class ReplayPlayer extends JDialog
 	/**
 	 * @param startTick event tick to open at, paused; or null to play from the start
 	 */
-	ReplayPlayer(Window owner, String title, DeathRecord record, byte[] gif, Integer startTick, Runnable openFolder,
+	ReplayPlayer(Window owner, String title, DeathRecord record, byte[] gif, Integer startTick, Runnable copyFolderPath,
 		Executor executor)
 	{
 		super(owner, title);
@@ -95,7 +95,7 @@ class ReplayPlayer extends JDialog
 			{
 				ReplayFrames.Decoded d = ReplayFrames.decode(gif, n -> SwingUtilities.invokeLater(() ->
 					status.setText("Loading replay... " + n + " frames")));
-				SwingUtilities.invokeLater(() -> ready(d, startTick, openFolder));
+				SwingUtilities.invokeLater(() -> ready(d, startTick, copyFolderPath));
 			}
 			catch (IOException | RuntimeException e)
 			{
@@ -105,7 +105,7 @@ class ReplayPlayer extends JDialog
 		});
 	}
 
-	private void ready(ReplayFrames.Decoded d, Integer startTick, Runnable openFolder)
+	private void ready(ReplayFrames.Decoded d, Integer startTick, Runnable copyFolderPath)
 	{
 		if (!isDisplayable())
 		{
@@ -173,8 +173,8 @@ class ReplayPlayer extends JDialog
 		JPanel west = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
 		west.add(play);
 		west.add(clock);
-		JButton folder = new JButton("Open folder");
-		folder.addActionListener(e -> openFolder.run());
+		JButton folder = new JButton("Copy folder path");
+		folder.addActionListener(e -> copyFolderPath.run());
 		controls.add(west, BorderLayout.WEST);
 		controls.add(slider, BorderLayout.CENTER);
 		controls.add(folder, BorderLayout.EAST);

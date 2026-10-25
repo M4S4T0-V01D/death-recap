@@ -2,6 +2,8 @@ package com.deathrecap;
 
 import com.google.gson.Gson;
 import com.google.inject.Provides;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -71,7 +73,6 @@ import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.HotkeyListener;
 import net.runelite.client.util.ImageUtil;
-import net.runelite.client.util.LinkBrowser;
 import net.runelite.client.util.Text;
 
 @Slf4j
@@ -925,12 +926,14 @@ public class DeathRecapPlugin extends Plugin
 		return executor;
 	}
 
-	void openMediaFolder()
+	/** Copies the path of the current account's screenshot and replay folder to the clipboard. */
+	void copyMediaFolderPath()
 	{
 		long hash = loadedAccount;
 		if (hash != -1)
 		{
-			LinkBrowser.open(store.mediaDir(hash).toString());
+			Toolkit.getDefaultToolkit().getSystemClipboard()
+				.setContents(new StringSelection(store.mediaDir(hash).toString()), null);
 		}
 	}
 
