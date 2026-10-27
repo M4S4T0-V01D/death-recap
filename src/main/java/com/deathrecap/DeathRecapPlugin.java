@@ -2,17 +2,22 @@ package com.deathrecap;
 
 import com.google.gson.Gson;
 import com.google.inject.Provides;
+import java.awt.Component;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.io.OutputStream;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,6 +26,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 import javax.imageio.ImageIO;
@@ -41,6 +48,7 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.ParamID;
 import net.runelite.api.GameState;
 import net.runelite.api.HitsplatID;
+import net.runelite.api.MenuAction;
 import net.runelite.api.Player;
 import net.runelite.api.PlayerComposition;
 import net.runelite.api.Prayer;
@@ -53,6 +61,7 @@ import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.HitsplatApplied;
+import net.runelite.api.events.MenuOpened;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.ProjectileMoved;
 import net.runelite.api.gameval.InventoryID;
@@ -60,8 +69,10 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.PluginMessage;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
@@ -71,6 +82,10 @@ import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.ui.overlay.worldmap.WorldMapOverlay;
+import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
+import net.runelite.client.util.ColorUtil;
+import net.runelite.client.util.Filepath;
 import net.runelite.client.util.HotkeyListener;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.Text;
@@ -130,6 +145,22 @@ public class DeathRecapPlugin extends Plugin
 
 	@Inject
 	private KeyManager keyManager;
+
+	@Inject
+	private EventBus eventBus;
+
+	@Inject
+	private WorldMapPointManager worldMapPointManager;
+
+	@Inject
+	private WorldMapOverlay worldMapOverlay;
+
+	private volatile DeathMap deathMap;
+	/** Encodes MP4s, one at a time, so a long export never holds up saving or loading. */
+	private ExecutorService videoExecutor;
+
+	/** True once Gielinor Wrapped has said hello, until it says goodbye. */
+	private volatile boolean wrappedListening;
 
 	/** How long the replay of a clip runs past the key press. */
 	private static final long CLIP_AFTER_MS = 500;
@@ -203,6 +234,13 @@ public class DeathRecapPlugin extends Plugin
 		store = new DeathStore(gson, getPluginDirectory());
 		capture = new DeathCapture(client, drawManager, config, store);
 		capture.start();
+		deathMap = new DeathMap(client, worldMapPointManager, worldMapOverlay);
+		videoExecutor = Executors.newSingleThreadExecutor(r ->
+		{
+			Thread t = new Thread(r, "death-recap-video");
+			t.setDaemon(true);
+			return t;
+		});
 		panel = new DeathRecapPanel(this);
 		BufferedImage icon = DeathRecapPanel.icon();
 		navButton = NavigationButton.builder()
@@ -219,6 +257,10 @@ public class DeathRecapPlugin extends Plugin
 		{
 			loadAccount();
 		}
+		else
+		{
+			postReady(-1);
+		}
 	}
 
 	@Override
@@ -228,6 +270,9 @@ public class DeathRecapPlugin extends Plugin
 		overlayManager.remove(overlay);
 		keyManager.unregisterKeyListener(clipListener);
 		capture.stop();
+		deathMap.close();
+		deathMap = null;
+		videoExecutor.shutdownNow();
 		resetBuffers();
 		discardCloseCall();
 		synchronized (records)
@@ -236,6 +281,7 @@ public class DeathRecapPlugin extends Plugin
 			stats.clear();
 		}
 		loadedAccount = -1;
+		wrappedListening = false;
 		overlayRecord = null;
 		panel = null;
 	}
@@ -264,9 +310,17 @@ public class DeathRecapPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (DeathRecapConfig.GROUP.equals(event.getGroup()) && "maxSaved".equals(event.getKey()))
+		if (!DeathRecapConfig.GROUP.equals(event.getGroup()))
+		{
+			return;
+		}
+		if ("maxSaved".equals(event.getKey()))
 		{
 			trimAndSave();
+		}
+		else if ("deathMap".equals(event.getKey()) || "mapCloseCalls".equals(event.getKey()))
+		{
+			publish();
 		}
 	}
 
@@ -507,6 +561,38 @@ public class DeathRecapPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onMenuOpened(MenuOpened event)
+	{
+		if (!config.deathMap())
+		{
+			return;
+		}
+		List<DeathMap.Marker> hovered = deathMap.hovered();
+		for (int i = Math.min(hovered.size(), DeathMap.MAX_MENU) - 1; i >= 0; i--)
+		{
+			DeathMap.Marker m = hovered.get(i);
+			client.getMenu().createMenuEntry(-1)
+				.setOption("Open recap")
+				.setTarget(ColorUtil.wrapWithColorTag(m.getKiller() + " (" + RecapText.date(m.getTimestamp()) + ")",
+					DeathStats.colour(m.getKiller())))
+				.setType(MenuAction.RUNELITE)
+				.onClick(e -> SwingUtilities.invokeLater(() -> openRecap(m.getTimestamp(), m.getKiller())));
+		}
+	}
+
+	/** Swing thread. Opens the panel on the recap saved at {@code timestamp}, or on the killer's page if it is gone. */
+	private void openRecap(long timestamp, String killer)
+	{
+		DeathRecapPanel p = panel;
+		if (p == null)
+		{
+			return;
+		}
+		clientToolbar.openPanel(navButton);
+		p.focus(timestamp, killer);
+	}
+
+	@Subscribe
 	public void onActorDeath(ActorDeath event)
 	{
 		Player local = client.getLocalPlayer();
@@ -559,6 +645,10 @@ public class DeathRecapPlugin extends Plugin
 			capture.captureDeath(hash, record,
 				(r, name, times) -> mediaSaved(hash, r, name, null, false),
 				(r, name, times) -> mediaSaved(hash, r, name, times, true));
+			if (wrappedListening && config.shareWithWrapped())
+			{
+				executor.execute(() -> sendToWrapped(hash, record));
+			}
 		}
 
 		if (config.showOverlay())
@@ -921,6 +1011,81 @@ public class DeathRecapPlugin extends Plugin
 		});
 	}
 
+	/**
+	 * Swing thread. Asks where to save, then turns the replay into an MP4 on the video thread. {@code status}
+	 * is told the progress on the Swing thread, and finally either "Saved ..." or a failure message.
+	 */
+	void exportVideo(DeathRecord record, Component parent, Consumer<String> status)
+	{
+		String replay = record.getReplay();
+		long hash = loadedAccount;
+		if (replay == null || hash == -1)
+		{
+			return;
+		}
+		List<Filepath> chosen = new Filepath.Chooser()
+			.setIsSave()
+			.setAcceptsFiles()
+			.setDialogTitle("Save the replay as a video")
+			.addExtensionFilter("MP4 video", "mp4")
+			.setDefaultExtension("mp4")
+			.setFileName("death-recap-" + record.getTimestamp() + ".mp4")
+			.showDialog(parent);
+		if (chosen == null || chosen.isEmpty())
+		{
+			return;
+		}
+		Filepath dest = chosen.get(0);
+		int maxWidth = config.videoSize().getMaxWidth();
+		status.accept("Making the video...");
+		videoExecutor.execute(() ->
+		{
+			String result;
+			try
+			{
+				byte[] gif = store.read(hash, replay);
+				try (OutputStream out = dest.openOutputStream())
+				{
+					int[] last = {-1};
+					ReplayVideo.write(gif, record, maxWidth, FontManager.getRunescapeFont(), out, pct ->
+					{
+						if (pct / 5 != last[0])
+						{
+							last[0] = pct / 5;
+							SwingUtilities.invokeLater(() -> status.accept("Making the video... " + pct + "%"));
+						}
+					});
+				}
+				result = "Saved " + dest.getFileName();
+			}
+			catch (InterruptedIOException e)
+			{
+				deleteQuietly(dest);
+				return;
+			}
+			catch (IOException | RuntimeException e)
+			{
+				log.warn("Unable to export the replay video", e);
+				deleteQuietly(dest);
+				result = "Unable to make the video";
+			}
+			String message = result;
+			SwingUtilities.invokeLater(() -> status.accept(message));
+		});
+	}
+
+	private static void deleteQuietly(Filepath file)
+	{
+		try
+		{
+			file.deleteIfExists();
+		}
+		catch (IOException e)
+		{
+			log.debug("Unable to delete {}", file, e);
+		}
+	}
+
 	ScheduledExecutorService getExecutor()
 	{
 		return executor;
@@ -960,6 +1125,10 @@ public class DeathRecapPlugin extends Plugin
 		if (kept)
 		{
 			trimAndSave();
+			if (record.isDeath() && wrappedListening && config.shareWithWrapped())
+			{
+				executor.execute(() -> sendToWrapped(hash, record));
+			}
 		}
 		else
 		{
@@ -993,6 +1162,7 @@ public class DeathRecapPlugin extends Plugin
 		publish();
 		if (!config.saveToDisk())
 		{
+			postReady(hash);
 			return;
 		}
 		executor.execute(() ->
@@ -1012,6 +1182,10 @@ public class DeathRecapPlugin extends Plugin
 					}
 				}
 			}
+			else
+			{
+				backfill = fillDetails(savedStats, loaded);
+			}
 			synchronized (records)
 			{
 				if (loadedAccount != hash)
@@ -1029,7 +1203,149 @@ public class DeathRecapPlugin extends Plugin
 				saveStats();
 			}
 			publish();
+			postReady(hash);
 		});
+	}
+
+	/**
+	 * Adds the location and fight details that stats from before 2.0 lack, from the recaps still saved.
+	 * Returns true if anything changed.
+	 */
+	static boolean fillDetails(List<StatEntry> entries, List<DeathRecord> recaps)
+	{
+		Map<Long, DeathRecord> byTime = new HashMap<>();
+		for (DeathRecord r : recaps)
+		{
+			if (!r.isClip())
+			{
+				byTime.put(r.getTimestamp(), r);
+			}
+		}
+		boolean changed = false;
+		for (StatEntry e : entries)
+		{
+			DeathRecord r = byTime.get(e.getTimestamp());
+			if (r != null && e.missingDetails())
+			{
+				int x = e.getX();
+				int hp = e.getHpWhenHit();
+				int fight = e.getFightTicks();
+				e.fillFrom(r, e.getKiller());
+				changed |= x != e.getX() || hp != e.getHpWhenHit() || fight != e.getFightTicks();
+			}
+		}
+		return changed;
+	}
+
+	@Subscribe
+	public void onPluginMessage(PluginMessage event)
+	{
+		if (!WrappedBridge.NAMESPACE.equals(event.getNamespace()))
+		{
+			return;
+		}
+		if (WrappedBridge.GOODBYE.equals(event.getName()))
+		{
+			wrappedListening = false;
+			return;
+		}
+		if (!WrappedBridge.HELLO.equals(event.getName()))
+		{
+			return;
+		}
+		wrappedListening = true;
+		Map<String, Object> data = event.getData();
+		long hash = WrappedBridge.account(data);
+		if (hash == -1 || hash != loadedAccount || !config.shareWithWrapped())
+		{
+			return;
+		}
+		List<DeathRecord> missing = new ArrayList<>();
+		synchronized (records)
+		{
+			for (DeathRecord r : records)
+			{
+				if (r.isDeath() && !WrappedBridge.has(data, r.getTimestamp()))
+				{
+					missing.add(r);
+				}
+			}
+		}
+		if (!missing.isEmpty())
+		{
+			executor.execute(() ->
+			{
+				// Oldest first, so they are logged in order.
+				for (int i = missing.size() - 1; i >= 0; i--)
+				{
+					sendToWrapped(hash, missing.get(i));
+				}
+			});
+		}
+	}
+
+	private void postReady(long hash)
+	{
+		eventBus.post(new PluginMessage(WrappedBridge.NAMESPACE, WrappedBridge.READY, WrappedBridge.ready(hash)));
+	}
+
+	/**
+	 * Background executor. Sends one death to Gielinor Wrapped: a share card in the player's chosen layout, plus
+	 * the screenshot and replay if they've been saved.
+	 */
+	private void sendToWrapped(long hash, DeathRecord record)
+	{
+		if (!wrappedListening || !config.shareWithWrapped() || !record.isDeath())
+		{
+			return;
+		}
+		String shotName;
+		String replayName;
+		int[] times;
+		synchronized (records)
+		{
+			if (hash != loadedAccount)
+			{
+				return;
+			}
+			shotName = record.getScreenshot();
+			replayName = record.getReplay();
+			times = record.getReplayTimes();
+		}
+		try
+		{
+			byte[] shot = readOrNull(hash, shotName);
+			byte[] replay = readOrNull(hash, replayName);
+			BufferedImage shotImage = shot == null ? null : ImageIO.read(new ByteArrayInputStream(shot));
+			RecapAnalyzer.Summary summary = RecapAnalyzer.analyze(record);
+			BufferedImage card = ShareCard.render(shotImage, record, summary,
+				FontManager.getRunescapeFont(), FontManager.getRunescapeBoldFont(), config.shareCardLayout());
+			ByteArrayOutputStream png = new ByteArrayOutputStream();
+			ImageIO.write(card, "png", png);
+			eventBus.post(new PluginMessage(WrappedBridge.NAMESPACE, WrappedBridge.DEATH,
+				WrappedBridge.death(hash, record, summary, png.toByteArray(), shot, replay, times)));
+		}
+		catch (IOException | RuntimeException e)
+		{
+			log.warn("Unable to send a death to Gielinor Wrapped", e);
+		}
+	}
+
+	private byte[] readOrNull(long hash, String name)
+	{
+		if (name == null)
+		{
+			return null;
+		}
+		try
+		{
+			return store.read(hash, name);
+		}
+		catch (IOException e)
+		{
+			log.debug("Unable to read {}", name, e);
+			return null;
+		}
 	}
 
 	private void trimAndSave()
@@ -1095,11 +1411,25 @@ public class DeathRecapPlugin extends Plugin
 	private void publish()
 	{
 		final List<DeathRecord> snapshot;
+		final List<StatEntry> statsSnapshot;
 		final DeathStats.Report report;
 		synchronized (records)
 		{
 			snapshot = new ArrayList<>(records);
+			statsSnapshot = new ArrayList<>(stats);
 			report = DeathStats.compute(stats, sessionStart);
+		}
+		DeathMap map = deathMap;
+		if (map != null)
+		{
+			if (config.deathMap())
+			{
+				map.show(statsSnapshot, config.mapCloseCalls());
+			}
+			else
+			{
+				map.clear();
+			}
 		}
 		DeathRecapPanel p = panel;
 		if (p != null)

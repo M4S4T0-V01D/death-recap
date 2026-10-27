@@ -14,11 +14,46 @@ public interface DeathRecapConfig extends Config
 	String GROUP = "death-recap";
 
 	@ConfigSection(
-		name = "Screenshot & replay",
-		description = "Save a screenshot and an animated replay with each recap",
+		name = "Recording",
+		description = "What goes into a recap",
+		position = 0
+	)
+	String RECORDING = "recording";
+
+	@ConfigSection(
+		name = "After a death",
+		description = "What's shown right after you die",
 		position = 10
 	)
+	String AFTER_DEATH = "afterDeath";
+
+	@ConfigSection(
+		name = "Screenshot & replay",
+		description = "Save a screenshot and an animated replay with each recap",
+		position = 20
+	)
 	String MEDIA = "media";
+
+	@ConfigSection(
+		name = "Sharing & export",
+		description = "Share cards, MP4 export and Gielinor Wrapped",
+		position = 30
+	)
+	String SHARING = "sharing";
+
+	@ConfigSection(
+		name = "World map",
+		description = "Mark where you died on the world map",
+		position = 40
+	)
+	String WORLD_MAP = "worldMap";
+
+	@ConfigSection(
+		name = "Storage",
+		description = "Keeping recaps between sessions",
+		position = 50
+	)
+	String STORAGE = "storage";
 
 	@Range(min = 5, max = 60)
 	@Units(Units.SECONDS)
@@ -26,6 +61,7 @@ public interface DeathRecapConfig extends Config
 		keyName = "recapSeconds",
 		name = "Recap length",
 		description = "How far back before a death to record",
+		section = RECORDING,
 		position = 1
 	)
 	default int recapSeconds()
@@ -37,7 +73,8 @@ public interface DeathRecapConfig extends Config
 		keyName = "showOverlay",
 		name = "Show on-screen recap",
 		description = "Show a short recap on screen after you die",
-		position = 2
+		section = AFTER_DEATH,
+		position = 11
 	)
 	default boolean showOverlay()
 	{
@@ -50,7 +87,8 @@ public interface DeathRecapConfig extends Config
 		keyName = "overlaySeconds",
 		name = "On-screen duration",
 		description = "How long the on-screen recap stays up",
-		position = 3
+		section = AFTER_DEATH,
+		position = 12
 	)
 	default int overlaySeconds()
 	{
@@ -61,7 +99,8 @@ public interface DeathRecapConfig extends Config
 		keyName = "chatSummary",
 		name = "Chat summary",
 		description = "Post a one-line summary in chat after you die",
-		position = 4
+		section = AFTER_DEATH,
+		position = 13
 	)
 	default boolean chatSummary()
 	{
@@ -72,7 +111,8 @@ public interface DeathRecapConfig extends Config
 		keyName = "recordAttacks",
 		name = "Record attack animations",
 		description = "Include attackers' attack animations and incoming projectiles in the timeline",
-		position = 5
+		section = RECORDING,
+		position = 2
 	)
 	default boolean recordAttacks()
 	{
@@ -83,7 +123,8 @@ public interface DeathRecapConfig extends Config
 		keyName = "saveToDisk",
 		name = "Save recaps",
 		description = "Keep recaps between sessions",
-		position = 6
+		section = STORAGE,
+		position = 51
 	)
 	default boolean saveToDisk()
 	{
@@ -95,7 +136,8 @@ public interface DeathRecapConfig extends Config
 		keyName = "maxSaved",
 		name = "Recaps to keep",
 		description = "Older recaps are removed once this many are stored",
-		position = 7
+		section = STORAGE,
+		position = 52
 	)
 	default int maxSaved()
 	{
@@ -107,7 +149,8 @@ public interface DeathRecapConfig extends Config
 		name = "Record close calls",
 		description = "Save a recap when a hit takes you very low and you survive. It's made after the fight"
 			+ " calms down; nothing is shown while you're in combat.",
-		position = 8
+		section = RECORDING,
+		position = 3
 	)
 	default boolean closeCalls()
 	{
@@ -120,7 +163,8 @@ public interface DeathRecapConfig extends Config
 		keyName = "closeCallPercent",
 		name = "Close call below",
 		description = "Counts as a close call when a hit takes your HP to this share of your maximum or lower",
-		position = 9
+		section = RECORDING,
+		position = 4
 	)
 	default int closeCallPercent()
 	{
@@ -132,8 +176,8 @@ public interface DeathRecapConfig extends Config
 		name = "Share card layout",
 		description = "The layout listed first under the Share card button. Wide: screenshot with the recap below."
 			+ " Side panel: recap beside the screenshot. Tall: stacked, for phones. Recap only: no screenshot.",
-		section = MEDIA,
-		position = 15
+		section = SHARING,
+		position = 31
 	)
 	default ShareCardLayout shareCardLayout()
 	{
@@ -145,7 +189,7 @@ public interface DeathRecapConfig extends Config
 		name = "Screenshot on death",
 		description = "Save a screenshot of the moment you die with the recap. Needs 'Save recaps'.",
 		section = MEDIA,
-		position = 11
+		position = 21
 	)
 	default boolean saveScreenshot()
 	{
@@ -158,7 +202,7 @@ public interface DeathRecapConfig extends Config
 		description = "Keep a rolling buffer of the last few seconds at full game size and save it as an animated GIF"
 			+ " when you die. Uses about 20-80 MB of memory and some CPU on a background thread. Needs 'Save recaps'.",
 		section = MEDIA,
-		position = 12
+		position = 22
 	)
 	default boolean recordReplay()
 	{
@@ -172,7 +216,7 @@ public interface DeathRecapConfig extends Config
 		name = "Replay length",
 		description = "Seconds of gameplay before the death to include; about 2 more seconds after it are added",
 		section = MEDIA,
-		position = 13
+		position = 23
 	)
 	default int replaySeconds()
 	{
@@ -185,7 +229,7 @@ public interface DeathRecapConfig extends Config
 		name = "Replay frame rate",
 		description = "Frames per second captured for the replay",
 		section = MEDIA,
-		position = 14
+		position = 24
 	)
 	default int replayFps()
 	{
@@ -197,10 +241,60 @@ public interface DeathRecapConfig extends Config
 		name = "Save clip hotkey",
 		description = "Saves the last few seconds as a recap, with a replay, without dying. Needs Save recaps and Death replay on.",
 		section = MEDIA,
-		position = 15
+		position = 25
 	)
 	default Keybind clipHotkey()
 	{
 		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		keyName = "shareWithWrapped",
+		name = "Share with Gielinor Wrapped",
+		description = "If the Gielinor Wrapped plugin is installed, send it each death (share card in your layout above,"
+			+ " screenshot and replay) so it can log every death and put them in its recap videos.",
+		section = SHARING,
+		position = 34
+	)
+	default boolean shareWithWrapped()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "videoSize",
+		name = "MP4 size",
+		description = "Frame size of replays exported as MP4. Smaller files are quicker to make and to upload.",
+		section = SHARING,
+		position = 32
+	)
+	default VideoSize videoSize()
+	{
+		return VideoSize.HD;
+	}
+
+	@ConfigItem(
+		keyName = "deathMap",
+		name = "Show deaths on the map",
+		description = "Put a marker on the world map where each death happened, coloured by killer."
+			+ " Right-click a marker for its recap.",
+		section = WORLD_MAP,
+		position = 41
+	)
+	default boolean deathMap()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "mapCloseCalls",
+		name = "Include close calls",
+		description = "Mark close calls on the world map too",
+		section = WORLD_MAP,
+		position = 42
+	)
+	default boolean mapCloseCalls()
+	{
+		return false;
 	}
 }

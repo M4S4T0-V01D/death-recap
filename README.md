@@ -65,38 +65,61 @@ You're fighting a boss, the screen fills with hitsplats, and you're suddenly at 
   | Side panel | The recap in a column beside the screenshot |
   | Tall | Screenshot, then a big graph and the recap, stacked. Good for phones. |
   | Recap only | The recap and graph, no screenshot |
+- **MP4 export**: save any replay as an MP4 video, from its card or from the replay player. The clock, your HP and the latest hit or heal run along the bottom. Video is encoded in plain Java on a background thread, with no external tools. Pick full size, 1280 wide or 854 wide.
+- **Compare**: put two recaps side by side, earlier on the left, each with its HP graph and numbers, plus a short list of what was different: damage taken, food and potions used, your HP when hits landed, fight length and gp lost.
+
+### Death map
+- Every death with a known location appears as a dot on the world map, coloured by killer. Close calls can show too, as rings.
+- Hover a dot to see who killed you, when and what it cost. Right-click it and choose **Open recap** to jump to that recap in the panel.
 
 ### Close calls and clips
 - **Close calls**: when a hit takes you very low and you survive, the fight is saved as a "close call" with the same graph and findings. It's saved only once the fight calms down, so nothing pops up mid-fight.
 - **Clip hotkey**: press a key to save the last few seconds as a recap with a replay, without dying. Use it for a great fight or a near miss you want to keep.
 
+### Killers
+- Every attacker that killed you or nearly did, with its own page: deaths, close calls survived, gp lost to it, average damage taken, average HP when it hit and average fight length.
+- **Trend**: after 4 fights with the same killer, the older half is compared with the newer half: do you survive more of its close calls, eat before dying more often, have more HP when it hits? The verdict is Improving, Getting worse or About the same, with the reasons listed.
+- A small chart of your HP when it hit, fight by fight, and every saved recap against it, one click away.
+
 ### Stats
-- Deaths and close calls by attacker, the attacker that killed you most, and average damage taken before death.
+- Deaths and close calls in total, the attacker that killed you most, and average damage taken before death.
 - How many deaths came without eating, and how many with food still left.
 - gp lost all time and since RuneLite started, and your most expensive death.
+
+### Gielinor Wrapped
+- Got the **Gielinor Wrapped** plugin too? Death Recap sends it every death: the share card in your default layout, the screenshot and the replay. Wrapped keeps a log of every death and can put them in its recap videos. Deaths you had before installing Wrapped are sent once, the first time both run together.
+- Plugins can't read each other's files, so the deaths are passed as messages inside RuneLite. Nothing leaves your computer. Turn **Share with Gielinor Wrapped** off to stop it.
 
 ## Where it shows up
 
 - A short **on-screen summary** right after you die.
 - A one-line **chat message**: `Death Recap: killed by Zezima (level 126) with Armadyl godsword (22). 135 damage taken. Lost about 1.7M gp (Abyssal whip, ...).`
-- The **Death Recap side panel**, which keeps your recent recaps per account. Each one has Copy (as text), Share card and Delete buttons.
+- The **Death Recap side panel**, with three tabs:
+  - **Recaps**: your recent recaps per account, filterable to deaths, close calls or clips. Each has Copy (as text), Share card, Export MP4, Compare and Delete buttons.
+  - **Killers**: one page per attacker (see above).
+  - **Stats**: your all-time and session totals.
+- **Dots on the world map**.
 
 Each of these can be turned off.
 
 ## Settings
 
-| Setting | Default |
-| --- | --- |
-| Recap length | 15 s (5–60) |
-| Show on-screen recap / duration | On, 15 s |
-| Chat summary | On |
-| Record attack animations and projectiles | On |
-| Save recaps / recaps to keep | On, 25 (deaths, close calls and clips each) |
-| Record close calls / below | On, 15% of max HP (5–50) |
-| Death screenshot | On |
-| Death replay (GIF) / length / frame rate | Off, 8 s, 6 fps |
-| Save clip hotkey | Not set (needs Save recaps and Death replay) |
-| Share card layout | Wide |
+| Section | Setting | Default |
+| --- | --- | --- |
+| Recording | Recap length | 15 s (5–60) |
+| | Record attack animations and projectiles | On |
+| | Record close calls / below | On, 15% of max HP (5–50) |
+| After a death | Show on-screen recap / duration | On, 15 s |
+| | Chat summary | On |
+| Screenshot & replay | Screenshot on death | On |
+| | Death replay (GIF) / length / frame rate | Off, 8 s, 6 fps |
+| | Save clip hotkey | Not set (needs Save recaps and Death replay) |
+| Sharing & export | Share card layout | Wide |
+| | MP4 size | 1280 wide |
+| | Share with Gielinor Wrapped | On |
+| World map | Show deaths on the map | On |
+| | Include close calls | Off |
+| Storage | Save recaps / recaps to keep | On, 25 (deaths, close calls and clips each) |
 
 ## About the replay
 
