@@ -112,6 +112,8 @@ public class DeathRecapPlugin extends Plugin
 	private static final int CLOSE_CALL_CALM_TICKS = 10;
 	/** ...or this long after it started, whichever comes first. */
 	private static final int CLOSE_CALL_MAX_TICKS = 100;
+	/** A death within this many ticks of a saved close call takes it back, even if HP recovered in between. */
+	private static final int CLOSE_CALL_RETRACT_TICKS = 100;
 	private static final Skill[] STATE_SKILLS = {Skill.ATTACK, Skill.STRENGTH, Skill.DEFENCE, Skill.RANGED, Skill.MAGIC,
 		Skill.PRAYER, Skill.HITPOINTS};
 
@@ -209,6 +211,9 @@ public class DeathRecapPlugin extends Plugin
 	private final List<StatEntry> stats = new ArrayList<>();
 	/** A close call waiting for the fight to calm down; guarded by the {@link #records} lock. */
 	private DeathRecord pendingCloseCall;
+	/** The last saved close call and the tick it was saved, taken back if the player dies soon after. Client thread only. */
+	private DeathRecord lastCloseCall;
+	private int lastCloseCallTick;
 
 	@Getter(AccessLevel.PACKAGE)
 	private DeathRecord overlayRecord;
@@ -439,6 +444,8 @@ public class DeathRecapPlugin extends Plugin
 			records.add(0, record);
 			stats.add(entry);
 		}
+		lastCloseCall = record;
+		lastCloseCallTick = tick;
 		trimAndSave();
 		saveStats();
 		if (config.chatSummary())
@@ -448,6 +455,35 @@ public class DeathRecapPlugin extends Plugin
 				"<col=ffc040>Death Recap:</col> close call - HP fell to %d/%d against %s. Open the Death Recap panel for details.",
 				entry.getLowestHp(), maxHp, summary.getKiller()), null);
 		}
+	}
+
+	/**
+	 * A close call the player didn't survive in the end: the death came before HP got back above half, or
+	 * soon after it was saved. Its recap, stats and media go, so only the death counts.
+	 */
+	private void retractCloseCall(int tick)
+	{
+		DeathRecord last = lastCloseCall;
+		lastCloseCall = null;
+		if (last == null || (closeCallArmed && tick - lastCloseCallTick > CLOSE_CALL_RETRACT_TICKS))
+		{
+			return;
+		}
+		synchronized (records)
+		{
+			// Gone already if the panel deleted it or another account was loaded since.
+			if (!records.remove(last))
+			{
+				return;
+			}
+			stats.removeIf(s -> s.isCloseCall() && s.getTimestamp() == last.getTimestamp());
+		}
+		if (overlayRecord == last)
+		{
+			overlayRecord = null;
+		}
+		trimAndSave(List.of(last));
+		saveStats();
 	}
 
 	/** Drops an unfinished close call, e.g. because the player died or logged out, and its media. */
@@ -661,6 +697,7 @@ public class DeathRecapPlugin extends Plugin
 		}
 		lastDeathTick = tick;
 		discardCloseCall();
+		retractCloseCall(tick);
 		closeCallArmed = true;
 
 		// The killing hitsplat can arrive after this event in the same tick, so the recap is finished on
