@@ -237,11 +237,24 @@ public interface DeathRecapConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "replaySounds",
+		name = "Replay sounds",
+		description = "Remember the game's sound effects during a replay and play them again when you watch it,"
+			+ " at your sound effect volumes. MP4 exports stay silent.",
+		section = MEDIA,
+		position = 25
+	)
+	default boolean replaySounds()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "clipHotkey",
 		name = "Save clip hotkey",
 		description = "Saves the last few seconds as a recap, with a replay, without dying. Needs Save recaps and Death replay on.",
 		section = MEDIA,
-		position = 25
+		position = 26
 	)
 	default Keybind clipHotkey()
 	{

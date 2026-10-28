@@ -26,6 +26,8 @@ public class DeathRecord
 	private String replay;
 	/** When each replay frame was captured, in milliseconds relative to {@link #timestamp}. May be null. */
 	private int[] replayTimes;
+	/** Sound effects heard during the replay, in time order; null for older recaps. */
+	private List<ReplaySound> replaySounds;
 	/** File name of the share card in the media folder, or null. */
 	private String card;
 	/**

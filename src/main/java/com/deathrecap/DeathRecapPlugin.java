@@ -56,6 +56,7 @@ import net.runelite.api.Projectile;
 import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ActorDeath;
+import net.runelite.api.events.AreaSoundEffectPlayed;
 import net.runelite.api.kit.KitType;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.GameStateChanged;
@@ -64,6 +65,7 @@ import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.MenuOpened;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.ProjectileMoved;
+import net.runelite.api.events.SoundEffectPlayed;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
@@ -195,6 +197,8 @@ public class DeathRecapPlugin extends Plugin
 	private int lastHitTick = -1;
 	/** False after a close call until HP is back above half, so one fight gives one close call. */
 	private boolean closeCallArmed = true;
+	/** True while the client plays a replay's sound, so its sound event isn't recorded. Client thread only. */
+	private boolean replayingSound;
 	/** When this session started; deaths from then on count toward the session's totals. */
 	private long sessionStart;
 
@@ -412,8 +416,8 @@ public class DeathRecapPlugin extends Plugin
 		}
 		long hash = loadedAccount;
 		capture.captureDeath(hash, record,
-			(r, name, times) -> mediaSaved(hash, r, name, null, false),
-			(r, name, times) -> mediaSaved(hash, r, name, times, true));
+			(r, name, times, sounds) -> mediaSaved(hash, r, name, null, null, false),
+			(r, name, times, sounds) -> mediaSaved(hash, r, name, times, sounds, true));
 	}
 
 	private void finishCloseCall(DeathRecord record, int tick)
@@ -540,6 +544,60 @@ public class DeathRecapPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onSoundEffectPlayed(SoundEffectPlayed event)
+	{
+		if (!replayingSound)
+		{
+			capture.sound(event.getSoundId(), false);
+		}
+	}
+
+	@Subscribe
+	public void onAreaSoundEffectPlayed(AreaSoundEffectPlayed event)
+	{
+		Player local = client.getLocalPlayer();
+		Actor source = event.getSource();
+		if (replayingSound || local == null || source == null)
+		{
+			return;
+		}
+		// Only the fight: sounds from the player, whoever they're fighting, and anything else close enough to hear.
+		boolean fight = source == local || source.getInteracting() == local || local.getInteracting() == source;
+		if (fight || source.getWorldLocation().distanceTo(local.getWorldLocation()) <= Math.min(event.getRange(), 5))
+		{
+			capture.sound(event.getSoundId(), true);
+		}
+	}
+
+	/** Plays a replay's sound at the player's own volumes. Called from the replay window. */
+	void playReplaySound(ReplaySound sound)
+	{
+		clientThread.invokeLater(() ->
+		{
+			if (!config.replaySounds() || client.getGameState() != GameState.LOGGED_IN)
+			{
+				return;
+			}
+			int volume = sound.isArea() ? client.getPreferences().getAreaSoundEffectVolume()
+				: client.getPreferences().getSoundEffectVolume();
+			if (volume <= 0)
+			{
+				return;
+			}
+			// The client reports sounds it plays for us too; don't record the replay into the next one.
+			replayingSound = true;
+			try
+			{
+				client.playSoundEffect(sound.getId(), volume);
+			}
+			finally
+			{
+				replayingSound = false;
+			}
+		});
+	}
+
+	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
 		String option = event.getMenuOption();
@@ -643,8 +701,8 @@ public class DeathRecapPlugin extends Plugin
 		if (hash != -1)
 		{
 			capture.captureDeath(hash, record,
-				(r, name, times) -> mediaSaved(hash, r, name, null, false),
-				(r, name, times) -> mediaSaved(hash, r, name, times, true));
+				(r, name, times, sounds) -> mediaSaved(hash, r, name, null, null, false),
+				(r, name, times, sounds) -> mediaSaved(hash, r, name, times, sounds, true));
 			if (wrappedListening && config.shareWithWrapped())
 			{
 				executor.execute(() -> sendToWrapped(hash, record));
@@ -699,8 +757,8 @@ public class DeathRecapPlugin extends Plugin
 		trimAndSave();
 		long hash = loadedAccount;
 		capture.captureDeath(hash, record, CLIP_AFTER_MS,
-			(r, name, times) -> mediaSaved(hash, r, name, null, false),
-			(r, name, times) -> mediaSaved(hash, r, name, times, true));
+			(r, name, times, sounds) -> mediaSaved(hash, r, name, null, null, false),
+			(r, name, times, sounds) -> mediaSaved(hash, r, name, times, sounds, true));
 		client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", String.format(
 			"<col=60b0ff>Death Recap:</col> clip saved (%ds, %d damage taken). It's in the Death Recap panel.",
 			config.replaySeconds(), summary.getTotalDamage()), null);
@@ -969,13 +1027,24 @@ public class DeathRecapPlugin extends Plugin
 	 */
 	void loadMedia(String name, Consumer<byte[]> done)
 	{
+		loadMedia(name, false, done);
+	}
+
+	/** Like {@link #loadMedia}, but reads a replay's full-quality frames when they're still kept. */
+	void loadReplay(String replay, Consumer<byte[]> done)
+	{
+		loadMedia(replay, true, done);
+	}
+
+	private void loadMedia(String name, boolean replay, Consumer<byte[]> done)
+	{
 		long hash = loadedAccount;
 		executor.execute(() ->
 		{
 			byte[] bytes = null;
 			try
 			{
-				bytes = store.read(hash, name);
+				bytes = replay ? store.readReplay(hash, name) : store.read(hash, name);
 			}
 			catch (IOException e)
 			{
@@ -1043,11 +1112,11 @@ public class DeathRecapPlugin extends Plugin
 			String result;
 			try
 			{
-				byte[] gif = store.read(hash, replay);
+				byte[] frames = store.readReplay(hash, replay);
 				try (OutputStream out = dest.openOutputStream())
 				{
 					int[] last = {-1};
-					ReplayVideo.write(gif, record, maxWidth, FontManager.getRunescapeFont(), out, pct ->
+					ReplayVideo.write(frames, record, maxWidth, FontManager.getRunescapeFont(), out, pct ->
 					{
 						if (pct / 5 != last[0])
 						{
@@ -1103,7 +1172,7 @@ public class DeathRecapPlugin extends Plugin
 	}
 
 	/** Runs on the media thread once a screenshot or replay for {@code record} has been written. */
-	private void mediaSaved(long hash, DeathRecord record, String name, int[] times, boolean replay)
+	private void mediaSaved(long hash, DeathRecord record, String name, int[] times, List<ReplaySound> sounds, boolean replay)
 	{
 		boolean kept;
 		synchronized (records)
@@ -1115,6 +1184,7 @@ public class DeathRecapPlugin extends Plugin
 				{
 					record.setReplay(name);
 					record.setReplayTimes(times);
+					record.setReplaySounds(sounds == null || sounds.isEmpty() ? null : sounds);
 				}
 				else
 				{

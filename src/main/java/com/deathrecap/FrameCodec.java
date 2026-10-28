@@ -12,6 +12,7 @@ import javax.imageio.ImageWriter;
 import javax.imageio.metadata.IIOMetadata;
 import javax.imageio.metadata.IIOMetadataNode;
 import javax.imageio.stream.ImageOutputStream;
+import javax.imageio.stream.MemoryCacheImageOutputStream;
 import org.w3c.dom.NodeList;
 
 /**
@@ -32,7 +33,8 @@ final class FrameCodec
 	{
 		ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
 		ByteArrayOutputStream bytes = new ByteArrayOutputStream(256 * 1024);
-		try (ImageOutputStream out = ImageIO.createImageOutputStream(bytes))
+		// In memory: ImageIO would otherwise buffer every frame through a temporary file.
+		try (ImageOutputStream out = new MemoryCacheImageOutputStream(bytes))
 		{
 			writer.setOutput(out);
 			ImageWriteParam param = writer.getDefaultWriteParam();

@@ -16,13 +16,15 @@ import java.io.OutputStream;
 import java.util.function.IntConsumer;
 
 /**
- * Turns a saved replay GIF into an MP4 with the pure-Java encoder in {@code com.deathrecap.video}. The
- * GIF's uneven frame times are resampled to a steady {@link #FPS}, and a clock, HP and the latest event
- * are drawn along the bottom.
+ * Turns a saved replay into an MP4 with the pure-Java encoder in {@code com.deathrecap.video}, from its
+ * full-quality frames when they're still kept or else its GIF. The uneven frame times are resampled to a
+ * steady {@link #FPS}, and a clock, HP and the latest event are drawn along the bottom.
  */
 final class ReplayVideo
 {
 	static final int FPS = 10;
+	/** Lower is sharper and bigger; exports have no size limit, so this favours quality. */
+	static final int QP = 20;
 	private static final int MS_PER_TICK = 600;
 	/** How long an event stays on screen. */
 	private static final int CAPTION_MS = 1800;
@@ -36,10 +38,10 @@ final class ReplayVideo
 	 * @param maxWidth frames wider than this are scaled down; 0 keeps the recorded size
 	 * @param progress told the percentage done
 	 */
-	static void write(byte[] gif, DeathRecord record, int maxWidth, Font font, OutputStream out, IntConsumer progress)
+	static void write(byte[] replay, DeathRecord record, int maxWidth, Font font, OutputStream out, IntConsumer progress)
 		throws IOException
 	{
-		ReplayFrames.Decoded decoded = ReplayFrames.decode(gif, n -> { });
+		ReplayFrames.Decoded decoded = ReplayFrames.load(replay, n -> { });
 		int[] durations = decoded.getDurations();
 		int[] times = ReplayFrames.times(record.getReplayTimes(), durations);
 		int last = times.length - 1;
@@ -54,7 +56,7 @@ final class ReplayVideo
 
 		H264Encoder encoder = new H264Encoder(width, height, FPS);
 		encoder.setKeyInterval(FPS * 2);
-		encoder.setQp(23);
+		encoder.setQp(QP);
 		Mp4Writer mp4 = new Mp4Writer(width, height, FPS, encoder.sps(), encoder.pps());
 		ByteArrayOutputStream media = new ByteArrayOutputStream();
 

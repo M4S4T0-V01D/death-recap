@@ -10,6 +10,7 @@ import java.io.Reader;
 import java.io.Writer;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -33,6 +34,8 @@ class DeathStore
 	}.getType();
 
 	private final Gson gson;
+	/** Ending of a replay's full-quality frames file. */
+	static final String FRAMES = ".frames";
 	private final Filepath directory;
 
 	DeathStore(Gson gson, Filepath directory)
@@ -133,6 +136,80 @@ class DeathStore
 		}
 	}
 
+	/** Writes a replay's full-quality frames; see {@link ReplayFrames#writeFrames}. */
+	void writeFrames(long accountHash, String name, List<byte[]> jpegs, int[] times) throws IOException
+	{
+		mediaDir(accountHash).createDirectories();
+		try (OutputStream out = media(accountHash, name).openOutputStream())
+		{
+			ReplayFrames.writeFrames(out, jpegs, times);
+		}
+	}
+
+	/** The name of the full-quality frames saved beside a replay GIF, or null. */
+	static String framesName(String replay)
+	{
+		return replay == null || !replay.endsWith(".gif") ? null : replay.substring(0, replay.length() - 4) + FRAMES;
+	}
+
+	/** A replay's full-quality frames if they're still kept, otherwise its GIF. */
+	byte[] readReplay(long accountHash, String replay) throws IOException
+	{
+		String frames = framesName(replay);
+		if (frames != null && media(accountHash, frames).isFile())
+		{
+			try
+			{
+				return read(accountHash, frames);
+			}
+			catch (IOException e)
+			{
+				log.debug("Unable to read {}", frames, e);
+			}
+		}
+		return read(accountHash, replay);
+	}
+
+	/**
+	 * Keeps full-quality frames for only the newest {@code keep} replays, as each takes 10-30 MB. Older replays
+	 * still have their GIFs.
+	 */
+	void pruneFrames(long accountHash, int keep)
+	{
+		Filepath dir = mediaDir(accountHash);
+		if (!dir.isDirectory())
+		{
+			return;
+		}
+		try (Stream<Filepath> files = dir.walk(1))
+		{
+			List<Filepath> all = files.filter(f -> f.isFile() && f.getFileName().endsWith(FRAMES))
+				.sorted(Comparator.comparingLong(DeathStore::timeOf).reversed())
+				.collect(Collectors.toList());
+			for (Filepath f : all.subList(Math.min(keep, all.size()), all.size()))
+			{
+				f.deleteIfExists();
+			}
+		}
+		catch (IOException e)
+		{
+			log.warn("Unable to tidy replay frames", e);
+		}
+	}
+
+	private static long timeOf(Filepath file)
+	{
+		String name = file.getFileName();
+		try
+		{
+			return Long.parseLong(name.substring(0, name.length() - FRAMES.length()));
+		}
+		catch (NumberFormatException e)
+		{
+			return 0;
+		}
+	}
+
 	byte[] read(long accountHash, String name) throws IOException
 	{
 		try (InputStream in = media(accountHash, name).openInputStream())
@@ -143,7 +220,7 @@ class DeathStore
 
 	void deleteMedia(long accountHash, DeathRecord record)
 	{
-		for (String name : new String[]{record.getScreenshot(), record.getReplay(), record.getCard()})
+		for (String name : new String[]{record.getScreenshot(), record.getReplay(), framesName(record.getReplay()), record.getCard()})
 		{
 			if (name != null)
 			{
@@ -174,6 +251,7 @@ class DeathStore
 		{
 			keep.add(r.getScreenshot());
 			keep.add(r.getReplay());
+			keep.add(framesName(r.getReplay()));
 			keep.add(r.getCard());
 		}
 		try (Stream<Filepath> files = dir.walk(1))

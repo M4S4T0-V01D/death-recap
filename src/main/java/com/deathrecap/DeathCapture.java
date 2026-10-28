@@ -35,6 +35,8 @@ class DeathCapture
 	private static final int BUFFERS = 2;
 	/** The last frame is held this long (hundredths of a second) before the GIF loops. */
 	private static final int FINAL_FRAME_DELAY = 150;
+	/** Replays whose full-quality frames are kept for sharper videos; older ones keep just the GIF. */
+	static final int KEEP_FRAMES = 10;
 
 	private static final class Frame
 	{
@@ -48,11 +50,31 @@ class DeathCapture
 		}
 	}
 
-	/** Told the record, the saved file name and, for replays, when each frame was captured relative to the death in ms. */
+	private static final class Heard
+	{
+		final long time;
+		final int id;
+		final boolean area;
+
+		Heard(long time, int id, boolean area)
+		{
+			this.time = time;
+			this.id = id;
+			this.area = area;
+		}
+	}
+
+	/**
+	 * Told the record, the saved file name and, for replays, when each frame was captured relative to the death in ms
+	 * and the sounds heard meanwhile.
+	 */
 	interface Saved
 	{
-		void saved(DeathRecord record, String name, int[] times);
+		void saved(DeathRecord record, String name, int[] times, List<ReplaySound> sounds);
 	}
+
+	/** Most sounds kept for one replay; a busy fight plays a few per tick. */
+	static final int MAX_SOUNDS = 600;
 
 	private final Client client;
 	private final DrawManager drawManager;
@@ -60,6 +82,8 @@ class DeathCapture
 	private final DeathStore store;
 	private final Runnable frameListener = this::onFrame;
 	private final Deque<Frame> frames = new ArrayDeque<>();
+	/** Sounds heard recently; guarded by itself. */
+	private final Deque<Heard> sounds = new ArrayDeque<>();
 	/** Copy buffers not currently being compressed; at most {@link #BUFFERS} exist. */
 	private final Queue<BufferedImage> spare = new ConcurrentLinkedQueue<>();
 	private final AtomicInteger buffers = new AtomicInteger();
@@ -118,6 +142,10 @@ class DeathCapture
 		{
 			frames.clear();
 		}
+		synchronized (sounds)
+		{
+			sounds.clear();
+		}
 		// Buffers still being compressed come back to spare afterwards and are counted until dropped here.
 		while (spare.poll() != null)
 		{
@@ -156,7 +184,7 @@ class DeathCapture
 					try
 					{
 						store.writePng(accountHash, name, copy);
-						onScreenshot.saved(record, name, null);
+						onScreenshot.saved(record, name, null, null);
 					}
 					catch (Exception e)
 					{
@@ -185,17 +213,19 @@ class DeathCapture
 						}
 					}
 				}
+				List<ReplaySound> heard = soundsBetween(from, to, deathTime);
 				log.debug("Replay clip: {} frames, {} to {} ms from the death", clip.size(),
 					clip.isEmpty() ? 0 : clip.get(0).time - deathTime, clip.isEmpty() ? 0 : clip.get(clip.size() - 1).time - deathTime);
 				if (clip.size() >= 2)
 				{
-					execute(out, () -> writeReplay(accountHash, record, deathTime, clip, onReplay));
+					execute(out, () -> writeReplay(accountHash, record, deathTime, clip, heard, onReplay));
 				}
 			}, afterMs + 100, TimeUnit.MILLISECONDS);
 		}
 	}
 
-	private void writeReplay(long accountHash, DeathRecord record, long deathTime, List<Frame> clip, Saved onReplay)
+	private void writeReplay(long accountHash, DeathRecord record, long deathTime, List<Frame> clip, List<ReplaySound> heard,
+		Saved onReplay)
 	{
 		String name = deathTime + ".gif";
 		try
@@ -206,12 +236,66 @@ class DeathCapture
 			{
 				times[i] = (int) (clip.get(i).time - deathTime);
 			}
-			onReplay.saved(record, name, times);
+			try
+			{
+				List<byte[]> jpegs = new ArrayList<>(clip.size());
+				for (Frame f : clip)
+				{
+					jpegs.add(f.jpeg);
+				}
+				store.writeFrames(accountHash, DeathStore.framesName(name), jpegs, times);
+				store.pruneFrames(accountHash, KEEP_FRAMES);
+			}
+			catch (Exception e)
+			{
+				log.warn("Unable to save replay frames", e);
+			}
+			onReplay.saved(record, name, times, heard);
 		}
 		catch (Exception e)
 		{
 			log.warn("Unable to save death replay", e);
 		}
+	}
+
+	/**
+	 * Called on the client thread for each sound effect the game plays while recording. Times are taken now, so a
+	 * sound lines up with the frame drawn when it started.
+	 */
+	void sound(int id, boolean area)
+	{
+		if (!config.recordReplay() || !config.saveToDisk() || !config.replaySounds())
+		{
+			return;
+		}
+		long now = System.currentTimeMillis();
+		// Clips run longer after the key press than replays after a death, so keep enough for either.
+		long keep = config.replaySeconds() * 1000L + 10_000;
+		synchronized (sounds)
+		{
+			sounds.addLast(new Heard(now, id, area));
+			while (!sounds.isEmpty() && (sounds.peekFirst().time < now - keep || sounds.size() > MAX_SOUNDS * 2))
+			{
+				sounds.pollFirst();
+			}
+		}
+	}
+
+	/** The sounds heard between two absolute times, with times relative to the death. */
+	List<ReplaySound> soundsBetween(long from, long to, long deathTime)
+	{
+		List<ReplaySound> out = new ArrayList<>();
+		synchronized (sounds)
+		{
+			for (Heard h : sounds)
+			{
+				if (h.time >= from && h.time <= to && out.size() < MAX_SOUNDS)
+				{
+					out.add(new ReplaySound((int) (h.time - deathTime), h.id, h.area));
+				}
+			}
+		}
+		return out;
 	}
 
 	private static void execute(ExecutorService executor, Runnable task)

@@ -717,7 +717,7 @@ class DeathRecapPanel extends PluginPanel
 	/** Opens the replay player, paused at {@code tick} if given. */
 	private void replay(DeathRecord record, String title, Integer tick)
 	{
-		plugin.loadMedia(record.getReplay(), bytes ->
+		plugin.loadReplay(record.getReplay(), bytes ->
 		{
 			if (bytes == null)
 			{
@@ -734,7 +734,7 @@ class DeathRecapPanel extends PluginPanel
 				save.setToolTipText(working ? null : message);
 			}));
 			new ReplayPlayer(SwingUtilities.getWindowAncestor(this), title, record, bytes, tick, plugin::copyMediaFolderPath,
-				save, plugin.getExecutor())
+				save, plugin.getExecutor(), plugin::playReplaySound)
 				.setVisible(true);
 		});
 	}

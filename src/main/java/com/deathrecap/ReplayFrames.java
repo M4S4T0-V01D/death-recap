@@ -3,7 +3,10 @@ package com.deathrecap;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntConsumer;
@@ -21,6 +24,10 @@ import lombok.Value;
 final class ReplayFrames
 {
 	private static final String FORMAT = "javax_imageio_gif_image_1.0";
+	/** Starts a replay's full-quality frames file: "DRF1". */
+	private static final int MAGIC = 0x44524631;
+	/** How long the last frame of a frames file is shown, matching the GIF's final delay. */
+	static final int LAST_FRAME_MS = 1500;
 
 	@Value
 	static class Decoded
@@ -37,6 +44,63 @@ final class ReplayFrames
 
 	private ReplayFrames()
 	{
+	}
+
+	/**
+	 * Writes the frames as recorded, so videos made later don't suffer the GIF's 256 colours.
+	 *
+	 * @param times when each frame was captured, relative to the death in ms
+	 */
+	static void writeFrames(OutputStream out, List<byte[]> jpegs, int[] times) throws IOException
+	{
+		DataOutputStream data = new DataOutputStream(out);
+		data.writeInt(MAGIC);
+		data.writeInt(jpegs.size());
+		for (int i = 0; i < jpegs.size(); i++)
+		{
+			data.writeInt(times[i]);
+			data.writeInt(jpegs.get(i).length);
+			data.write(jpegs.get(i));
+		}
+		data.flush();
+	}
+
+	/** Decodes either a frames file or a replay GIF. */
+	static Decoded load(byte[] data, IntConsumer progress) throws IOException
+	{
+		if (data.length < 8 || data[0] != 'D' || data[1] != 'R' || data[2] != 'F' || data[3] != '1')
+		{
+			return decode(data, progress);
+		}
+		DataInputStream in = new DataInputStream(new ByteArrayInputStream(data));
+		in.readInt();
+		int count = in.readInt();
+		if (count < 1 || count > 10_000)
+		{
+			throw new IOException("Bad frame count " + count);
+		}
+		List<byte[]> frames = new ArrayList<>(count);
+		int[] times = new int[count];
+		for (int i = 0; i < count; i++)
+		{
+			times[i] = in.readInt();
+			int length = in.readInt();
+			if (length < 0 || length > in.available())
+			{
+				throw new IOException("Truncated frames file");
+			}
+			byte[] jpeg = new byte[length];
+			in.readFully(jpeg);
+			frames.add(jpeg);
+			progress.accept(i + 1);
+		}
+		int[] durations = new int[count];
+		for (int i = 0; i < count - 1; i++)
+		{
+			durations[i] = Math.max(20, times[i + 1] - times[i]);
+		}
+		durations[count - 1] = LAST_FRAME_MS;
+		return new Decoded(frames, durations);
 	}
 
 	/**

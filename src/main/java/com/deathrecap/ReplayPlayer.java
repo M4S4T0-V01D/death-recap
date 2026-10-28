@@ -12,9 +12,11 @@ import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import javax.swing.AbstractAction;
 import javax.swing.DefaultListCellRenderer;
@@ -48,6 +50,8 @@ class ReplayPlayer extends JDialog
 
 	private final DeathRecord record;
 	private final List<RecapEvent> events;
+	private final List<ReplaySound> sounds;
+	private final Consumer<ReplaySound> playSound;
 	private final JLabel status = new JLabel("Loading replay...", JLabel.CENTER);
 	private final Timer timer = new Timer(0, e -> advance());
 
@@ -64,12 +68,15 @@ class ReplayPlayer extends JDialog
 	/**
 	 * @param startTick event tick to open at, paused; or null to play from the start
 	 * @param extra shown next to "Copy folder path", or null
+	 * @param playSound plays one of the record's sounds while the replay plays
 	 */
-	ReplayPlayer(Window owner, String title, DeathRecord record, byte[] gif, Integer startTick, Runnable copyFolderPath,
-		JComponent extra, Executor executor)
+	ReplayPlayer(Window owner, String title, DeathRecord record, byte[] replay, Integer startTick, Runnable copyFolderPath,
+		JComponent extra, Executor executor, Consumer<ReplaySound> playSound)
 	{
 		super(owner, title);
 		this.record = record;
+		this.sounds = record.getReplaySounds() != null ? record.getReplaySounds() : Collections.emptyList();
+		this.playSound = playSound;
 		this.events = record.getEvents().stream()
 			.sorted(Comparator.comparingInt(RecapEvent::getTick))
 			.collect(Collectors.toList());
@@ -95,7 +102,7 @@ class ReplayPlayer extends JDialog
 		{
 			try
 			{
-				ReplayFrames.Decoded d = ReplayFrames.decode(gif, n -> SwingUtilities.invokeLater(() ->
+				ReplayFrames.Decoded d = ReplayFrames.load(replay, n -> SwingUtilities.invokeLater(() ->
 					status.setText("Loading replay... " + n + " frames")));
 				SwingUtilities.invokeLater(() -> ready(d, startTick, copyFolderPath, extra));
 			}
@@ -285,7 +292,16 @@ class ReplayPlayer extends JDialog
 			pause();
 			return;
 		}
+		long from = times[current];
 		show(current + 1);
+		// Only while playing: stepping and seeking stay quiet.
+		for (ReplaySound s : sounds)
+		{
+			if (s.getTime() > from && s.getTime() <= times[current])
+			{
+				playSound.accept(s);
+			}
+		}
 		schedule();
 	}
 
