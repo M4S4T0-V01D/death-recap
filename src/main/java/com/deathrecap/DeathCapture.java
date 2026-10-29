@@ -2,6 +2,7 @@ package com.deathrecap;
 
 import java.awt.Graphics2D;
 import java.awt.Image;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -21,8 +22,8 @@ import net.runelite.api.GameState;
 import net.runelite.client.ui.DrawManager;
 
 /**
- * Captures the death screenshot and keeps a rolling buffer of full-size frames for the replay GIF, so
- * text in both is as readable as in the game. Frames are copied on the client thread into one of two
+ * Captures the death screenshot and keeps a rolling buffer of frames for the replay GIF (at full size up to
+ * {@link #MAX_FRAME_WIDTH} wide), so text in both is as readable as in the game. Frames are copied on the client thread into one of two
  * reusable buffers and compressed on a dedicated thread. Screenshots and GIFs are written on a second
  * thread, so a slow GIF (say, a close call's just before a death) never stops recording. If the frame
  * thread falls behind, frames are skipped.
@@ -37,6 +38,8 @@ class DeathCapture
 	private static final int FINAL_FRAME_DELAY = 150;
 	/** Replays whose full-quality frames are kept for sharper videos; older ones keep just the GIF. */
 	static final int KEEP_FRAMES = 10;
+	/** Replay frames wider than this (1440p, 4K) are scaled down; 1080p is kept at full size. */
+	static final int MAX_FRAME_WIDTH = 1920;
 
 	private static final class Frame
 	{
@@ -94,6 +97,8 @@ class DeathCapture
 	private ExecutorService writer;
 	private long lastRequest;
 	private boolean requestPending;
+	/** The frame as it is compressed, reused for each frame. Frame thread only. */
+	private BufferedImage prepared;
 
 	DeathCapture(Client client, DrawManager drawManager, DeathRecapConfig config, DeathStore store)
 	{
@@ -349,7 +354,7 @@ class DeathCapture
 				{
 					try
 					{
-						Frame frame = new Frame(time, FrameCodec.encode(copy));
+						Frame frame = new Frame(time, FrameCodec.encode(prepare(copy)));
 						synchronized (frames)
 						{
 							frames.addLast(frame);
@@ -375,6 +380,25 @@ class DeathCapture
 				spare.offer(copy);
 			}
 		});
+	}
+
+	/**
+	 * Scales the frame down to {@link #MAX_FRAME_WIDTH} if wider, into a byte BGR image, which the JPEG encoder
+	 * takes about a third faster than int RGB. Frame thread; the result is only good until the next call.
+	 */
+	private BufferedImage prepare(BufferedImage full)
+	{
+		int width = Math.min(full.getWidth(), MAX_FRAME_WIDTH);
+		int height = width == full.getWidth() ? full.getHeight() : Math.max(2, (int) Math.round(full.getHeight() * (width / (double) full.getWidth())));
+		if (prepared == null || prepared.getWidth() != width || prepared.getHeight() != height)
+		{
+			prepared = new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
+		}
+		Graphics2D g = prepared.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+		g.drawImage(full, 0, 0, width, height, null);
+		g.dispose();
+		return prepared;
 	}
 
 	/** A free copy buffer of the given size, or null if both are busy. */

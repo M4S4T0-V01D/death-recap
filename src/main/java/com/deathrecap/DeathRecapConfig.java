@@ -199,7 +199,7 @@ public interface DeathRecapConfig extends Config
 	@ConfigItem(
 		keyName = "recordReplay",
 		name = "Death replay (GIF)",
-		description = "Keep a rolling buffer of the last few seconds at full game size and save it as an animated GIF"
+		description = "Keep a rolling buffer of the last few seconds at full game size (up to 1920 wide) and save it as an animated GIF"
 			+ " when you die. Uses about 20-80 MB of memory and some CPU on a background thread. Needs 'Save recaps'.",
 		section = MEDIA,
 		position = 22

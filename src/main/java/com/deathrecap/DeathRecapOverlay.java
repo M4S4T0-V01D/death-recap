@@ -20,6 +20,9 @@ class DeathRecapOverlay extends OverlayPanel
 	private static final int LOST_ITEMS = 3;
 
 	private final DeathRecapPlugin plugin;
+	/** The lost-items estimate for {@link #itemsFor}, worked out once rather than every frame. */
+	private DeathRecord itemsFor;
+	private ItemsOnDeath.Result items;
 
 	@Inject
 	DeathRecapOverlay(DeathRecapPlugin plugin)
@@ -61,7 +64,11 @@ class DeathRecapOverlay extends OverlayPanel
 
 		if (record.getState() != null)
 		{
-			ItemsOnDeath.Result items = ItemsOnDeath.compute(record.getState());
+			if (itemsFor != record)
+			{
+				items = ItemsOnDeath.compute(record.getState());
+				itemsFor = record;
+			}
 			panelComponent.getChildren().add(LineComponent.builder()
 				.left(items.getAtRisk().isEmpty() ? "Nothing lost" : "Lost (estimate)")
 				.right(items.getAtRisk().isEmpty() ? "" : ItemsOnDeath.gp(items.getRiskValue()) + " gp")
