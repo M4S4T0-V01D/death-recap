@@ -182,7 +182,23 @@ class DeathCapture
 		{
 			drawManager.requestNextFrameListener(image ->
 			{
-				BufferedImage copy = copy(image);
+				// Borrow a free replay buffer if there is one, so a death needs no new full-size image.
+				BufferedImage borrowed = spare(image.getWidth(null), image.getHeight(null));
+				BufferedImage copy;
+				try
+				{
+					copy = copy(image, borrowed);
+				}
+				catch (OutOfMemoryError e)
+				{
+					// This runs in the client's draw loop; a missing screenshot is better than stopping the client.
+					log.warn("Not enough memory for the death screenshot; skipping it");
+					if (borrowed != null)
+					{
+						spare.offer(borrowed);
+					}
+					return;
+				}
 				String name = deathTime + ".png";
 				execute(out, () ->
 				{
@@ -191,9 +207,16 @@ class DeathCapture
 						store.writePng(accountHash, name, copy);
 						onScreenshot.saved(record, name, null, null);
 					}
-					catch (Exception e)
+					catch (Exception | OutOfMemoryError e)
 					{
 						log.warn("Unable to save death screenshot", e);
+					}
+					finally
+					{
+						if (borrowed != null)
+						{
+							spare.offer(borrowed);
+						}
 					}
 				});
 			});
@@ -338,14 +361,22 @@ class DeathCapture
 		{
 			requestPending = false;
 			ScheduledExecutorService w = worker;
-			BufferedImage copy = w == null ? null : buffer(image.getWidth(null), image.getHeight(null));
-			if (copy == null)
+			BufferedImage copy;
+			try
 			{
+				copy = w == null ? null : buffer(image.getWidth(null), image.getHeight(null));
+				if (copy == null)
+				{
+					return;
+				}
+				copy(image, copy);
+			}
+			catch (OutOfMemoryError e)
+			{
+				// This runs in the client's draw loop; skip the frame rather than stop the client.
+				log.debug("Not enough memory for a replay frame; skipping it");
 				return;
 			}
-			Graphics2D g = copy.createGraphics();
-			g.drawImage(image, 0, 0, null);
-			g.dispose();
 			long time = System.currentTimeMillis();
 			long keep = config.replaySeconds() * 1000L + AFTER_DEATH_MS + 500;
 			try
@@ -364,7 +395,7 @@ class DeathCapture
 							}
 						}
 					}
-					catch (Exception e)
+					catch (Exception | OutOfMemoryError e)
 					{
 						log.debug("Unable to compress replay frame", e);
 					}
@@ -401,8 +432,32 @@ class DeathCapture
 		return prepared;
 	}
 
-	/** A free copy buffer of the given size, or null if both are busy. */
+	/** A free copy buffer of the given size, or null if both are busy. Throws OutOfMemoryError if one can't be made. */
 	private BufferedImage buffer(int width, int height)
+	{
+		BufferedImage b = spare(width, height);
+		if (b != null)
+		{
+			return b;
+		}
+		if (buffers.incrementAndGet() > BUFFERS)
+		{
+			buffers.decrementAndGet();
+			return null;
+		}
+		try
+		{
+			return new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+		}
+		catch (OutOfMemoryError e)
+		{
+			buffers.decrementAndGet();
+			throw e;
+		}
+	}
+
+	/** A spare copy buffer of the given size, or null; spares of another size are dropped. */
+	private BufferedImage spare(int width, int height)
 	{
 		BufferedImage b;
 		while ((b = spare.poll()) != null)
@@ -414,17 +469,13 @@ class DeathCapture
 			// The window was resized; replace this buffer.
 			buffers.decrementAndGet();
 		}
-		if (buffers.incrementAndGet() > BUFFERS)
-		{
-			buffers.decrementAndGet();
-			return null;
-		}
-		return new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+		return null;
 	}
 
-	private static BufferedImage copy(Image image)
+	/** Draws the frame into {@code into}, or into a new image if that is null. */
+	private static BufferedImage copy(Image image, BufferedImage into)
 	{
-		BufferedImage out = new BufferedImage(image.getWidth(null), image.getHeight(null), BufferedImage.TYPE_INT_RGB);
+		BufferedImage out = into != null ? into : new BufferedImage(image.getWidth(null), image.getHeight(null), BufferedImage.TYPE_INT_RGB);
 		Graphics2D g = out.createGraphics();
 		g.drawImage(image, 0, 0, null);
 		g.dispose();
