@@ -23,6 +23,7 @@ final class ShareCard
 	private static final Color TEXT = new Color(0xE6, 0xE6, 0xE6);
 	private static final Color MUTED = new Color(0x9A, 0x9A, 0x9A);
 	private static final Color BAR = new Color(0x48, 0x48, 0x48);
+	private static final Color MILESTONE = new Color(0xF0, 0xC0, 0x40);
 	private static final int MIN_WIDTH = 900;
 	private static final int COMPACT_WIDTH = 1100;
 	private static final int SOURCES = 5;
@@ -399,11 +400,19 @@ final class ShareCard
 		int findings(int x, int y, int w)
 		{
 			List<String> list = ShareCard.findings(summary);
-			if (list.isEmpty())
+			List<String> milestones = record.getMilestones() == null ? List.of() : record.getMilestones();
+			if (list.isEmpty() && milestones.isEmpty())
 			{
 				return 0;
 			}
 			int h = put(record.isDeath() ? "What happened" : "How it went", heading, TEXT, x, y, w);
+			for (String m : milestones)
+			{
+				for (String line : wrap("• " + m, g.getFontMetrics(body), w))
+				{
+					h += put(line, body, MILESTONE, x, y + h, w);
+				}
+			}
 			for (String f : list)
 			{
 				for (String line : wrap("• " + f, g.getFontMetrics(body), w))

@@ -108,6 +108,19 @@ public interface DeathRecapConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "milestoneChat",
+		name = "Milestones in chat",
+		description = "Post a chat line when a death reaches a milestone, like your most expensive death yet"
+			+ " or your first death to a new killer",
+		section = AFTER_DEATH,
+		position = 14
+	)
+	default boolean milestoneChat()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "recordAttacks",
 		name = "Record attack animations",
 		description = "Include attackers' attack animations and incoming projectiles in the timeline",

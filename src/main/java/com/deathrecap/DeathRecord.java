@@ -41,6 +41,8 @@ public class DeathRecord
 	private DeathState state;
 	/** Everyone who attacked in this recap, with combat levels; null for older recaps. */
 	private List<Attacker> attackers;
+	/** Milestones this death reached, like "Most expensive death yet"; null for close calls, clips and older recaps. */
+	private List<String> milestones;
 	private List<TickSnapshot> ticks = new ArrayList<>();
 	private List<RecapEvent> events = new ArrayList<>();
 

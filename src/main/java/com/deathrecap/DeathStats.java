@@ -72,6 +72,8 @@ final class DeathStats
 		StatEntry mostExpensive;
 		/** Deaths with food or potions still in the inventory. */
 		int withSupplies;
+		/** The latest death and the longest gap between deaths. */
+		Milestones.Gaps gaps;
 
 		Killer killer(String name)
 		{
@@ -153,7 +155,7 @@ final class DeathStats
 		}
 		killers.sort(Comparator.comparingInt(Killer::getDeaths).thenComparingInt(Killer::getCloseCalls).reversed());
 		return new Report(deaths, closeCalls, deaths == 0 ? 0 : (int) Math.round((double) damage / deaths), hungry, killers,
-			lost, sessionDeaths, sessionLost, mostExpensive, withSupplies);
+			lost, sessionDeaths, sessionLost, mostExpensive, withSupplies, Milestones.gaps(sorted));
 	}
 
 	private static Killer killer(String name, List<StatEntry> list)

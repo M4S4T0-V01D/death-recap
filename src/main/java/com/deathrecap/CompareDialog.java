@@ -10,6 +10,7 @@ import java.awt.Rectangle;
 import java.awt.Window;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiFunction;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.JComponent;
@@ -20,6 +21,7 @@ import javax.swing.border.EmptyBorder;
 import lombok.Value;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
+import net.runelite.client.util.AsyncBufferedImage;
 
 /**
  * Two recaps side by side, older on the left, with a list of what was different between them.
@@ -46,7 +48,8 @@ final class CompareDialog extends JDialog
 		int suppliesLeft;
 	}
 
-	CompareDialog(Window owner, DeathRecord first, DeathRecord second)
+	/** @param images item id and quantity to its icon, for the gear */
+	CompareDialog(Window owner, DeathRecord first, DeathRecord second, BiFunction<Integer, Integer, AsyncBufferedImage> images)
 	{
 		super(owner, "Compare recaps");
 		DeathRecord a = first.getTimestamp() <= second.getTimestamp() ? first : second;
@@ -54,14 +57,15 @@ final class CompareDialog extends JDialog
 		setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 
 		JPanel columns = new JPanel(new GridLayout(1, 2, 12, 0));
-		columns.add(column(a, "Earlier"));
-		columns.add(column(b, "Later"));
+		columns.add(column(a, "Earlier", images));
+		columns.add(column(b, "Later", images));
 
 		JPanel diff = new JPanel();
 		diff.setLayout(new BoxLayout(diff, BoxLayout.Y_AXIS));
 		diff.setBorder(new EmptyBorder(10, 0, 0, 0));
 		diff.add(label("What was different", Color.WHITE, true));
-		List<String> lines = differences(facts(a), facts(b));
+		List<String> lines = new ArrayList<>(differences(facts(a), facts(b)));
+		lines.addAll(gearDifferences(a, b));
 		if (lines.isEmpty())
 		{
 			lines = List.of("Nothing stands out: the two went much the same way.");
@@ -80,7 +84,7 @@ final class CompareDialog extends JDialog
 		setLocationRelativeTo(owner);
 	}
 
-	private static JPanel column(DeathRecord r, String title)
+	private static JPanel column(DeathRecord r, String title, BiFunction<Integer, Integer, AsyncBufferedImage> images)
 	{
 		RecapAnalyzer.Summary summary = RecapAnalyzer.analyze(r);
 		Facts f = facts(r, summary);
@@ -123,6 +127,14 @@ final class CompareDialog extends JDialog
 		{
 			col.add(label("• " + finding, MUTED, false));
 		}
+		List<DeathState.ItemStack> worn = worn(r);
+		if (!worn.isEmpty())
+		{
+			col.add(label("Gear: about " + ItemsOnDeath.gp(Gear.value(worn)) + " gp", Color.LIGHT_GRAY, false));
+			GearGrid grid = new GearGrid(worn, images);
+			grid.setAlignmentX(LEFT_ALIGNMENT);
+			col.add(grid);
+		}
 		return col;
 	}
 
@@ -141,6 +153,29 @@ final class CompareDialog extends JDialog
 		int left = s == null ? -1 : StatEntry.count(s.getFood()) + StatEntry.count(s.getPotions());
 		return new Facts(RecapAnalyzer.label(r, summary.getKiller()), e.getDamage(), consumed, lowest, e.getHpWhenHit(),
 			e.getFightTicks(), r.isDeath() ? e.getLost() : 0, left);
+	}
+
+	private static List<DeathState.ItemStack> worn(DeathRecord r)
+	{
+		return r.getState() == null ? List.of() : r.getState().getEquipment();
+	}
+
+	/** How the gear changed from {@code a} (earlier) to {@code b} (later); empty when either has none recorded. */
+	static List<String> gearDifferences(DeathRecord a, DeathRecord b)
+	{
+		List<DeathState.ItemStack> x = worn(a);
+		List<DeathState.ItemStack> y = worn(b);
+		List<String> out = new ArrayList<>(Gear.differences(x, y));
+		if (!x.isEmpty() && !y.isEmpty())
+		{
+			long before = Gear.value(x);
+			long after = Gear.value(y);
+			if (Math.abs(after - before) >= Math.max(100_000, before / 5))
+			{
+				out.add("Gear worth about " + ItemsOnDeath.gp(before) + " gp, then " + ItemsOnDeath.gp(after) + " gp");
+			}
+		}
+		return out;
 	}
 
 	/** What changed from {@code a} (earlier) to {@code b} (later), plainly and without advice. */

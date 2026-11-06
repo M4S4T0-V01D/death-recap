@@ -132,6 +132,14 @@ final class RecapText
 		StringBuilder sb = new StringBuilder();
 		sb.append("Death Recap: ").append(headline(r, s)).append('\n');
 		sb.append(date(r.getTimestamp())).append(" - ").append(location(r)).append("\n\n");
+		if (r.getMilestones() != null)
+		{
+			for (String m : r.getMilestones())
+			{
+				sb.append("Milestone: ").append(m).append('\n');
+			}
+			sb.append('\n');
+		}
 		for (String f : s.getFindings())
 		{
 			sb.append("* ").append(f).append('\n');
@@ -143,6 +151,11 @@ final class RecapText
 			for (String line : stateLines(state))
 			{
 				sb.append("  ").append(line).append('\n');
+			}
+			if (!state.getEquipment().isEmpty())
+			{
+				sb.append(String.format("  Gear (%s gp): %s%n", ItemsOnDeath.gp(Gear.value(state.getEquipment())),
+					state.getEquipment().stream().map(RecapText::stack).collect(Collectors.joining(", "))));
 			}
 			if (r.isDeath())
 			{

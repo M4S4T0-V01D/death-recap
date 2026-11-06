@@ -52,6 +52,7 @@ You're fighting a boss, the screen fills with hitsplats, and you're suddenly at 
 - **Timeline**: every hit, heal, attack, projectile, food, potion and prayer change, with how long before the death each one happened.
 - **HP and prayer graph**: your HP line with every drop in red and every heal in yellow, a low-HP band, hits drawn as numbered bars sized by damage (the killing blow outlined), food and potions marked, and a seconds axis. Hover it to see your exact HP and prayer at any moment.
 - **State at death**: boosted and real stats, special attack and run energy, active prayers, weapon and attack style, skull and Protect Item.
+- **Gear at death**: what you were wearing, laid out like the equipment screen with item icons, plus what it was worth. Hover an item for its name and value. Close calls and clips record your gear too.
 - **Money and items lost**: an estimate of what you lost and what you kept, at Grand Exchange prices.
 
 ### Screenshot, replay and sharing
@@ -66,7 +67,7 @@ You're fighting a boss, the screen fills with hitsplats, and you're suddenly at 
   | Tall | Screenshot, then a big graph and the recap, stacked. Good for phones. |
   | Recap only | The recap and graph, no screenshot |
 - **MP4 export**: save any replay as an MP4 video, from its card or from the replay player. The clock, your HP and the latest hit or heal run along the bottom. Video is encoded in plain Java on a background thread, with no external tools. Pick full size, 1280 wide or 854 wide.
-- **Compare**: put two recaps side by side, earlier on the left, each with its HP graph and numbers, plus a short list of what was different: damage taken, food and potions used, your HP when hits landed, fight length and gp lost.
+- **Compare**: put two recaps side by side, earlier on the left, each with its HP graph and numbers, plus a short list of what was different: damage taken, food and potions used, your HP when hits landed, fight length, gp lost and gear, slot by slot ("Body: Rune platebody, then Bandos chestplate").
 
 ### Death map
 - Every death with a known location appears as a dot on the world map, coloured by killer. Close calls can show too, as rings.
@@ -85,6 +86,11 @@ You're fighting a boss, the screen fills with hitsplats, and you're suddenly at 
 - Deaths and close calls in total, the attacker that killed you most, and average damage taken before death.
 - How many deaths came without eating, and how many with food still left.
 - gp lost all time and since RuneLite started, and your most expensive death.
+
+### Milestones
+- When a death reaches a milestone, the recap says so: your first death, your 10th, 25th, 50th and so on, your first death to a new killer, your 5th, 10th or 25th to the same one, your most expensive death yet, and your longest gap between deaths (or a first death in a week or more).
+- Milestones show at the top of the recap, on the share card and in a gold chat line (turn off **Milestones in chat** to skip it). The Stats tab shows how long it's been since your last death, your longest gap and the latest milestones.
+- Close calls and clips don't count. Resetting stats starts milestones over.
 
 ### Gielinor Wrapped
 - Got the **Gielinor Wrapped** plugin too? Death Recap sends it every death: the share card in your default layout, the screenshot and the replay. Wrapped keeps a log of every death and can put them in its recap videos. Deaths you had before installing Wrapped are sent once, the first time both run together.
@@ -111,6 +117,7 @@ Each of these can be turned off.
 | | Record close calls / below | On, 15% of max HP (5–50) |
 | After a death | Show on-screen recap / duration | On, 15 s |
 | | Chat summary | On |
+| | Milestones in chat | On |
 | Screenshot & replay | Screenshot on death | On |
 | | Death replay (GIF) / length / frame rate | Off, 8 s, 6 fps |
 | | Save clip hotkey | Not set (needs Save recaps and Death replay) |

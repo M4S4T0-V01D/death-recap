@@ -86,6 +86,7 @@ import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.worldmap.WorldMapOverlay;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
+import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.ColorUtil;
 import net.runelite.client.util.Filepath;
 import net.runelite.client.util.HotkeyListener;
@@ -726,10 +727,13 @@ public class DeathRecapPlugin extends Plugin
 		record.setKiller(summary.getKiller());
 		resetBuffers();
 
+		StatEntry entry = StatEntry.of(record, summary);
 		synchronized (records)
 		{
+			List<String> milestones = Milestones.of(stats, entry);
+			record.setMilestones(milestones.isEmpty() ? null : milestones);
 			records.add(0, record);
-			stats.add(StatEntry.of(record, summary));
+			stats.add(entry);
 		}
 		trimAndSave();
 		saveStats();
@@ -758,6 +762,11 @@ public class DeathRecapPlugin extends Plugin
 			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", String.format(
 				"<col=ff4040>Death Recap:</col> killed by %s%s. %d damage taken.%s Open the Death Recap panel for details.",
 				RecapText.killer(record, summary), blow, summary.getTotalDamage(), RecapText.lostSentence(record)), null);
+		}
+		if (config.milestoneChat() && record.getMilestones() != null)
+		{
+			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "<col=f0c040>Death Recap milestone:</col> "
+				+ String.join(". ", record.getMilestones()) + ".", null);
 		}
 	}
 
@@ -844,11 +853,11 @@ public class DeathRecapPlugin extends Plugin
 		Item weapon = worn != null ? worn.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx()) : null;
 		state.setWeapon(weapon != null && weapon.getId() > 0 ? itemManager.getItemComposition(weapon.getId()).getName() : "Unarmed");
 		state.setAttackStyle(attackStyle());
+		state.setEquipment(stacks(worn, true));
 		if (items)
 		{
-			state.setEquipment(stacks(worn));
 			ItemContainer inventory = client.getItemContainer(InventoryID.INV);
-			state.setInventory(stacks(inventory));
+			state.setInventory(stacks(inventory, false));
 			state.setFood(supplies(inventory, "Eat"));
 			state.setPotions(supplies(inventory, "Drink"));
 		}
@@ -887,22 +896,31 @@ public class DeathRecapPlugin extends Plugin
 		return new ArrayList<>(out.values());
 	}
 
-	private List<DeathState.ItemStack> stacks(ItemContainer container)
+	/** The container's items with prices; {@code worn} also records each item's equipment slot. */
+	private List<DeathState.ItemStack> stacks(ItemContainer container, boolean worn)
 	{
 		List<DeathState.ItemStack> out = new ArrayList<>();
 		if (container == null)
 		{
 			return out;
 		}
-		for (Item item : container.getItems())
+		Item[] items = container.getItems();
+		for (int i = 0; i < items.length; i++)
 		{
+			Item item = items[i];
 			if (item.getId() <= 0 || item.getQuantity() <= 0)
 			{
 				continue;
 			}
 			ItemComposition comp = itemManager.getItemComposition(item.getId());
 			long price = itemManager.getItemPrice(itemManager.canonicalize(item.getId()));
-			out.add(new DeathState.ItemStack(item.getId(), comp.getName(), item.getQuantity(), price > 0 ? price : comp.getHaPrice()));
+			DeathState.ItemStack stack = new DeathState.ItemStack(item.getId(), comp.getName(), item.getQuantity(),
+				price > 0 ? price : comp.getHaPrice());
+			if (worn)
+			{
+				stack.setSlot(i);
+			}
+			out.add(stack);
 		}
 		return out;
 	}
@@ -995,15 +1013,21 @@ public class DeathRecapPlugin extends Plugin
 		publish();
 	}
 
-	/**
-	 * Draws the share card for {@code record} off the Swing thread, saves it next to the screenshot and
-	 * hands it to {@code done} on the Swing thread; {@code done} gets null if drawing failed.
-	 */
+	/** The item's icon, filled in once it loads; safe to call from the Swing thread. */
+	AsyncBufferedImage itemImage(int id, int quantity)
+	{
+		return itemManager.getImage(id, quantity, quantity > 1);
+	}
+
 	ShareCardLayout shareCardLayout()
 	{
 		return config.shareCardLayout();
 	}
 
+	/**
+	 * Draws the share card for {@code record} off the Swing thread, saves it next to the screenshot and
+	 * hands it to {@code done} on the Swing thread; {@code done} gets null if drawing failed.
+	 */
 	void makeShareCard(DeathRecord record, ShareCardLayout layout, Consumer<BufferedImage> done)
 	{
 		long hash = loadedAccount;

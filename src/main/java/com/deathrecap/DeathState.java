@@ -25,7 +25,6 @@ public class DeathState
 
 	@Data
 	@NoArgsConstructor
-	@AllArgsConstructor
 	public static class ItemStack
 	{
 		private int id;
@@ -33,6 +32,16 @@ public class DeathState
 		private int quantity;
 		/** Value of one item: the GE price, or the high alchemy value if it has none. */
 		private long price;
+		/** Equipment slot index for worn items; -1 for carried items and recaps from before slots were recorded. */
+		private int slot = -1;
+
+		public ItemStack(int id, String name, int quantity, long price)
+		{
+			this.id = id;
+			this.name = name;
+			this.quantity = quantity;
+			this.price = price;
+		}
 	}
 
 	private List<Stat> stats = new ArrayList<>();
@@ -45,6 +54,7 @@ public class DeathState
 	private String attackStyle;
 	private boolean skulled;
 	private boolean protectItem;
+	/** Worn items; also recorded for close calls and clips since gear was added to the recap. */
 	private List<ItemStack> equipment = new ArrayList<>();
 	private List<ItemStack> inventory = new ArrayList<>();
 	/** Carried items with an Eat option, one stack per item; null for recaps from before this was recorded. */

@@ -148,6 +148,7 @@ public class CardPreviewTest
 			prayer = Math.max(0, prayer - 2);
 			r.getTicks().add(new TickSnapshot(t, hp, 99, prayer, prayer > 0 ? "Protect from Magic" : null));
 		}
+		r.setMilestones(List.of("First death to Vorkath", "Most expensive death yet: 4.20M gp (before: 1.10M gp)"));
 		return r;
 	}
 }

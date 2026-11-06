@@ -485,6 +485,11 @@ class DeathRecapPanel extends PluginPanel
 		body.setVisible(open);
 
 		String who = RecapText.headline(record, summary);
+		if (record.getMilestones() != null)
+		{
+			body.add(left(title("Milestones")));
+			body.add(left(small(record.getMilestones(), CONSUME)));
+		}
 		if (record.getScreenshot() != null || record.getReplay() != null)
 		{
 			JPanel media = new JPanel(new BorderLayout(0, 4));
@@ -533,6 +538,11 @@ class DeathRecapPanel extends PluginPanel
 		{
 			body.add(left(title(record.isCloseCall() ? "At the low point" : record.isClip() ? "When the clip was saved" : "At death")));
 			body.add(left(small(RecapText.stateLines(state), Color.LIGHT_GRAY)));
+			if (!state.getEquipment().isEmpty())
+			{
+				body.add(left(title("Gear: " + ItemsOnDeath.gp(Gear.value(state.getEquipment())) + " gp worn")));
+				body.add(left(new GearGrid(state.getEquipment(), plugin::itemImage)));
+			}
 			if (record.isDeath() && (!state.getEquipment().isEmpty() || !state.getInventory().isEmpty()))
 			{
 				ItemsOnDeath.Result items = ItemsOnDeath.compute(state);
@@ -608,7 +618,7 @@ class DeathRecapPanel extends PluginPanel
 				String label = RecapAnalyzer.label(other, RecapAnalyzer.analyze(other).getKiller());
 				JMenuItem item = new JMenuItem((other.isCloseCall() ? "Close call: " : other.isClip() ? "Clip: " : "")
 					+ label + " (" + RecapText.date(other.getTimestamp()) + ")");
-				item.addActionListener(ev -> new CompareDialog(SwingUtilities.getWindowAncestor(this), record, other).setVisible(true));
+				item.addActionListener(ev -> new CompareDialog(SwingUtilities.getWindowAncestor(this), record, other, plugin::itemImage).setVisible(true));
 				menu.add(item);
 				if (menu.getComponentCount() >= 20)
 				{
@@ -812,6 +822,12 @@ class DeathRecapPanel extends PluginPanel
 			}
 		}
 		statsView.add(left(small(lines, Color.LIGHT_GRAY)));
+		List<String> milestones = milestoneLines(r);
+		if (!milestones.isEmpty())
+		{
+			statsView.add(left(title("Milestones")));
+			statsView.add(left(small(milestones, CONSUME)));
+		}
 		statsView.add(left(title("Since RuneLite started")));
 		statsView.add(left(small(List.of(
 			"Deaths: " + r.getSessionDeaths(),
@@ -824,6 +840,43 @@ class DeathRecapPanel extends PluginPanel
 		statsView.add(left(bar));
 		statsView.revalidate();
 		statsView.repaint();
+	}
+
+	/** Time since the last death, the longest gap and the latest milestones reached. */
+	private List<String> milestoneLines(DeathStats.Report r)
+	{
+		List<String> lines = new java.util.ArrayList<>();
+		Milestones.Gaps gaps = r.getGaps();
+		if (gaps.getLastDeath() > 0)
+		{
+			lines.add("Last death: " + Milestones.duration(System.currentTimeMillis() - gaps.getLastDeath()) + " ago");
+		}
+		if (gaps.getLongestEnd() != null)
+		{
+			lines.add("Longest gap between deaths: " + Milestones.duration(gaps.getLongest()) + ", ended "
+				+ RecapText.date(gaps.getLongestEnd().getTimestamp()) + " by " + DeathStats.name(gaps.getLongestEnd()));
+		}
+		int shown = 0;
+		for (DeathRecord record : records)
+		{
+			if (record.getMilestones() == null)
+			{
+				continue;
+			}
+			if (shown == 0)
+			{
+				lines.add("Latest:");
+			}
+			for (String m : record.getMilestones())
+			{
+				lines.add("  " + RecapText.date(record.getTimestamp()) + ": " + m);
+			}
+			if (++shown >= 5)
+			{
+				break;
+			}
+		}
+		return lines;
 	}
 
 	private void shareCard(JButton share, DeathRecord record, String who, ShareCardLayout layout)
